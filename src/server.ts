@@ -32,8 +32,67 @@ server.registerTool(
     inputSchema: getClientsSchema,
   },
   async ({ skip = 0, take = 50 }, _extra) => {
+    console.log(`[tool] getClients called { skip: ${skip}, take: ${take} }`);
     const rows = await prisma.user.findMany({ skip, take });
     return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+  }
+);
+
+const getProductsSchema = {
+  sectionId: z.number().int().min(1).optional(),
+  subSectionId: z.number().int().min(1).optional(),
+  active: z.boolean().optional(),
+} as const;
+
+server.registerTool(
+  "getProducts",
+  {
+    description:
+      "Devuelve todos los productos (permite filtrar por sectionId, subSectionId y active). Agrega 'formattedPrice' (es-AR) en cada item.",
+    inputSchema: getProductsSchema,
+  },
+  async ({ sectionId, subSectionId, active }, _extra) => {
+    console.log(
+      `[tool] getProducts called { sectionId: ${
+        sectionId ?? "-"
+      }, subSectionId: ${subSectionId ?? "-"}, active: ${active ?? "-"} }`
+    );
+    const where: any = {};
+    if (sectionId) where.sectionId = sectionId;
+    if (subSectionId) where.subSectionId = subSectionId;
+    if (active !== undefined) where.active = active;
+    const products = await prisma.product.findMany({
+      include: {
+        section: {
+          include: {
+            subSections: true,
+          },
+        },
+      },
+      orderBy: [
+        { sectionId: "asc" },
+        { order: "asc" },
+        { subSectionId: "asc" },
+        { subSectionOrder: "asc" },
+      ],
+      where,
+    });
+
+    const nf = new Intl.NumberFormat("es-AR", {
+      style: "decimal",
+      currency: "ARS",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+
+    const formatted = products.map((p: any) => ({
+      ...p,
+      formattedPrice: nf.format(Number(p.price)),
+    }));
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
+    };
   }
 );
 
@@ -51,11 +110,58 @@ server.registerTool(
     inputSchema: getProductsBySectionSchema,
   },
   async ({ sectionId, subSectionId }, _extra) => {
+    console.log(
+      `[tool] getProductsBySection called { sectionId: ${
+        sectionId ?? "-"
+      }, subSectionId: ${subSectionId ?? "-"} }`
+    );
     const where: any = {};
     if (sectionId) where.sectionId = sectionId;
     if (subSectionId) where.subSectionId = subSectionId;
     const rows = await prisma.product.findMany({ where });
-    return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+
+    const nf = new Intl.NumberFormat("es-AR", {
+      style: "decimal",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+    const formatted = rows.map((p: any) => ({
+      ...p,
+      formattedPrice: nf.format(Number(p.price)),
+    }));
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
+    };
+  }
+);
+
+// Tool: contar productos (con filtros opcionales)
+const getProductsCountSchema = {
+  sectionId: z.number().int().min(1).optional(),
+  subSectionId: z.number().int().min(1).optional(),
+  active: z.boolean().optional(),
+} as const;
+
+server.registerTool(
+  "getProductsCount",
+  {
+    description:
+      "Devuelve el conteo total de productos (permite filtrar por sectionId, subSectionId y active)",
+    inputSchema: getProductsCountSchema,
+  },
+  async ({ sectionId, subSectionId, active }, _extra) => {
+    console.log(
+      `[tool] getProductsCount called { sectionId: ${
+        sectionId ?? "-"
+      }, subSectionId: ${subSectionId ?? "-"}, active: ${active ?? "-"} }`
+    );
+    const where: any = {};
+    if (sectionId) where.sectionId = sectionId;
+    if (subSectionId) where.subSectionId = subSectionId;
+    if (active !== undefined) where.active = active;
+    const count = await prisma.product.count({ where });
+    return { content: [{ type: "text", text: JSON.stringify({ count }) }] };
   }
 );
 
@@ -75,6 +181,11 @@ server.registerTool(
     inputSchema: createProductSchema,
   },
   async ({ name, price, sectionId, subSectionId }, _extra) => {
+    console.log(
+      `[tool] createProduct called { name: ${name}, price: ${price}, sectionId: ${sectionId}, subSectionId: ${
+        subSectionId ?? "-"
+      } }`
+    );
     const product = await prisma.product.create({
       data: { name, price, sectionId, subSectionId },
     });
@@ -83,28 +194,6 @@ server.registerTool(
     };
   }
 );
-
-// Tool: crear pedido
-// server.registerTool(
-//   "createOrder",
-//   {
-//     description: "Crea un pedido simple (clienteId, total)",
-//     inputSchema: {
-//       type: "object",
-//       properties: {
-//         clienteId: { type: "number" },
-//         total: { type: "number" },
-//       },
-//       additionalProperties: false,
-//     },
-//   },
-//   async ({ clienteId, total }, _extra) => {
-//     const pedido = await prisma.pedido.create({
-//       data: { clienteId, total, estado: "pendiente" },
-//     });
-//     return { content: [{ type: "text", text: JSON.stringify(pedido, null, 2) }] };
-//   }
-// );
 
 /** 2) START: STDI Opción (local) **/
 export async function startStdio() {
@@ -120,6 +209,23 @@ export async function startHttp(port = 4000) {
 
   // map sessionId => transport
   const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+  // Contadores por método HTTP
+  const counters: Record<string, number> = {
+    GET: 0,
+    POST: 0,
+    PUT: 0,
+    DELETE: 0,
+    PATCH: 0,
+    OTHER: 0,
+  };
+  app.use((req, _res, next) => {
+    const m = (req.method || "OTHER").toUpperCase();
+    if (counters[m] === undefined) counters.OTHER++;
+    else counters[m]++;
+    console.log(`[http] ${req.method} ${req.path}`);
+    next();
+  });
 
   app.all("/mcp", async (req, res) => {
     // Si es inicialización (cliente iniciando sesión), creamos transport y conectamos
@@ -154,6 +260,21 @@ export async function startHttp(port = 4000) {
     console.log(
       `MCP Streamable HTTP listening on http://localhost:${port}/mcp`
     );
+  });
+
+  // Al cerrar, imprime resumen
+  const printSummary = () => {
+    console.log(
+      `[http] summary -> GET: ${counters.GET}, POST: ${counters.POST}, PUT: ${counters.PUT}, PATCH: ${counters.PATCH}, DELETE: ${counters.DELETE}, OTHER: ${counters.OTHER}`
+    );
+  };
+  process.on("SIGINT", () => {
+    printSummary();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    printSummary();
+    process.exit(0);
   });
 }
 
