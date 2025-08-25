@@ -195,6 +195,71 @@ server.registerTool(
   }
 );
 
+// Tool: actualizar descripción de un producto
+const updateProductSchema = {
+  id: z.number().int().min(1).optional(),
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  active: z.boolean().optional(),
+  price: z.coerce.number().positive().optional(),
+  sectionId: z.number().int().min(1).optional(),
+  subSectionId: z.number().int().min(1).optional(),
+} as const;
+
+server.registerTool(
+  "updateProduct",
+  {
+    description:
+      "Actualiza campos de un producto por id o nombre (description/active/price/sectionId/subSectionId)",
+    inputSchema: updateProductSchema,
+  },
+  async (
+    { id, name, description, active, price, sectionId, subSectionId },
+    _extra
+  ) => {
+    console.log(
+      `[tool] updateProduct called { id: ${id ?? "-"}, name: ${
+        name ?? "-"
+      } }, active: ${active ?? "-"}, price: ${price ?? "-"}, sectionId: ${
+        sectionId ?? "-"
+      }, subSectionId: ${subSectionId ?? "-"}`
+    );
+    // Debe indicar cómo identificar el producto
+    if (!id && !name) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "Debe enviar id o name" }),
+          },
+        ],
+      };
+    }
+    // Debe enviar al menos un campo actualizable
+    if (!id && !name && !active && !price && !sectionId && !subSectionId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error:
+                "Debe enviar algún campo para actualizar: description, active, price, sectionId o subSectionId",
+            }),
+          },
+        ],
+      };
+    }
+    const where: any = id ? { id } : { name };
+    const updated = await prisma.product.update({
+      where,
+      data: { description, active, price, sectionId, subSectionId },
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
+    };
+  }
+);
+
 /** 2) START: STDI Opción (local) **/
 export async function startStdio() {
   const transport = new StdioServerTransport();
