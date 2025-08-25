@@ -39,8 +39,6 @@ server.registerTool(
 );
 
 const getProductsSchema = {
-  sectionId: z.number().int().min(1).optional(),
-  subSectionId: z.number().int().min(1).optional(),
   active: z.boolean().optional(),
 } as const;
 
@@ -51,15 +49,9 @@ server.registerTool(
       "Devuelve todos los productos (permite filtrar por sectionId, subSectionId y active). Agrega 'formattedPrice' (es-AR) en cada item.",
     inputSchema: getProductsSchema,
   },
-  async ({ sectionId, subSectionId, active }, _extra) => {
-    console.log(
-      `[tool] getProducts called { sectionId: ${
-        sectionId ?? "-"
-      }, subSectionId: ${subSectionId ?? "-"}, active: ${active ?? "-"} }`
-    );
+  async ({ active }, _extra) => {
+    console.log(`[tool] getProducts called { active: ${active ?? "-"} }`);
     const where: any = {};
-    if (sectionId) where.sectionId = sectionId;
-    if (subSectionId) where.subSectionId = subSectionId;
     if (active !== undefined) where.active = active;
     const products = await prisma.product.findMany({
       include: {
@@ -96,36 +88,58 @@ server.registerTool(
   }
 );
 
-// Tool: productos por sección/subsección
-// También como ZodRawShape
-const getProductsBySectionSchema = {
+// Tool: productos por nombre (búsqueda parcial, case-insensitive)
+const getProductsByNameSchema = {
+  name: z.string().min(1),
   sectionId: z.number().int().min(1).optional(),
   subSectionId: z.number().int().min(1).optional(),
+  active: z.boolean().optional(),
 } as const;
 
 server.registerTool(
-  "getProductsBySection",
+  "getProductsByName",
   {
-    description: "Filtra por sectionId o subSectionId",
-    inputSchema: getProductsBySectionSchema,
+    description:
+      "Busca productos por nombre (coincidencia parcial, case-insensitive). Permite filtrar por sectionId, subSectionId y active. Agrega 'formattedPrice' (es-AR).",
+    inputSchema: getProductsByNameSchema,
   },
-  async ({ sectionId, subSectionId }, _extra) => {
+  async ({ name, sectionId, subSectionId, active }, _extra) => {
     console.log(
-      `[tool] getProductsBySection called { sectionId: ${
+      `[tool] getProductsByName called { name: ${name}, sectionId: ${
         sectionId ?? "-"
-      }, subSectionId: ${subSectionId ?? "-"} }`
+      }, subSectionId: ${subSectionId ?? "-"}, active: ${active ?? "-"} }`
     );
-    const where: any = {};
+
+    const where: any = {
+      name: { contains: name, mode: "insensitive" },
+    };
     if (sectionId) where.sectionId = sectionId;
     if (subSectionId) where.subSectionId = subSectionId;
-    const rows = await prisma.product.findMany({ where });
+    if (active !== undefined) where.active = active;
+
+    const products = await prisma.product.findMany({
+      include: {
+        section: {
+          include: { subSections: true },
+        },
+      },
+      orderBy: [
+        { sectionId: "asc" },
+        { order: "asc" },
+        { subSectionId: "asc" },
+        { subSectionOrder: "asc" },
+      ],
+      where,
+    });
 
     const nf = new Intl.NumberFormat("es-AR", {
-      style: "decimal",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      style: "currency",
+      currency: "ARS",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     });
-    const formatted = rows.map((p: any) => ({
+
+    const formatted = products.map((p: any) => ({
       ...p,
       formattedPrice: nf.format(Number(p.price)),
     }));
@@ -204,17 +218,18 @@ const updateProductSchema = {
   price: z.coerce.number().positive().optional(),
   sectionId: z.number().int().min(1).optional(),
   subSectionId: z.number().int().min(1).optional(),
+  order: z.number().int().min(0).optional(),
 } as const;
 
 server.registerTool(
   "updateProduct",
   {
     description:
-      "Actualiza campos de un producto por id o nombre (description/active/price/sectionId/subSectionId)",
+      "Actualiza campos de un producto por id o nombre (name/description/active/price/sectionId/subSectionId/order)",
     inputSchema: updateProductSchema,
   },
   async (
-    { id, name, description, active, price, sectionId, subSectionId },
+    { id, name, description, active, price, sectionId, subSectionId, order },
     _extra
   ) => {
     console.log(
@@ -222,7 +237,7 @@ server.registerTool(
         name ?? "-"
       } }, active: ${active ?? "-"}, price: ${price ?? "-"}, sectionId: ${
         sectionId ?? "-"
-      }, subSectionId: ${subSectionId ?? "-"}`
+      }, subSectionId: ${subSectionId ?? "-"}, order: ${order ?? "-"}`
     );
     // Debe indicar cómo identificar el producto
     if (!id && !name) {
@@ -236,14 +251,23 @@ server.registerTool(
       };
     }
     // Debe enviar al menos un campo actualizable
-    if (!id && !name && !active && !price && !sectionId && !subSectionId) {
+    if (
+      !id &&
+      !name &&
+      !active &&
+      !price &&
+      !sectionId &&
+      !subSectionId &&
+      order === undefined &&
+      !description
+    ) {
       return {
         content: [
           {
             type: "text",
             text: JSON.stringify({
               error:
-                "Debe enviar algún campo para actualizar: description, active, price, sectionId o subSectionId",
+                "Debe enviar algún campo para actualizar: name, description, active, price, sectionId, subSectionId u order",
             }),
           },
         ],
@@ -252,7 +276,15 @@ server.registerTool(
     const where: any = id ? { id } : { name };
     const updated = await prisma.product.update({
       where,
-      data: { description, active, price, sectionId, subSectionId },
+      data: {
+        name,
+        description,
+        active,
+        price,
+        sectionId,
+        subSectionId,
+        order,
+      },
     });
     return {
       content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
