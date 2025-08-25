@@ -718,6 +718,212 @@ server.registerTool(
   }
 );
 
+// Tool: productos por nombre de sección (case-insensitive)
+const getProductsBySectionNameSchema = {
+  sectionName: z.string().min(1),
+  subSectionName: z.string().min(1).optional(),
+  active: z.boolean().optional(),
+} as const;
+
+server.registerTool(
+  "getProductsBySectionName",
+  {
+    description:
+      "Devuelve los productos de una sección por nombre (case-insensitive). Si la sección tiene subsecciones, agrupa por subsección y respeta el orden; también permite filtrar por una 'subSectionName' específica. Agrega 'formattedPrice' (es-AR).",
+    inputSchema: getProductsBySectionNameSchema,
+  },
+  async ({ sectionName, subSectionName, active }, _extra) => {
+    console.log(
+      `[tool] getProductsBySectionName called { sectionName: ${sectionName}, subSectionName: ${
+        subSectionName ?? "-"
+      }, active: ${active ?? "-"} }`
+    );
+
+    // 1) Resolver sección por nombre (case-insensitive)
+    const section = await prisma.section.findFirst({
+      where: { name: { equals: sectionName, mode: "insensitive" } },
+      include: { subSections: true },
+    });
+
+    if (!section) {
+      const available = await prisma.section.findMany({
+        select: { id: true, name: true, subSection: true, order: true },
+        orderBy: { order: "asc" },
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                error: `Sección no encontrada: ${sectionName}`,
+                sections: available,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    // Formateador de precio (es-AR)
+    const nf = new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    // 2) Si NO tiene subsecciones
+    if (section.subSection !== true) {
+      if (subSectionName) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: `La sección '${section.name}' no tiene subsecciones. No puede usar 'subSectionName'.`,
+                  section: {
+                    id: section.id,
+                    name: section.name,
+                    subSection: false,
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+      const where: any = { sectionId: section.id, subSectionId: null };
+      if (active !== undefined) where.active = active;
+
+      const products = await prisma.product.findMany({
+        where,
+        orderBy: [{ order: "asc" }],
+      });
+
+      const formatted = products.map((p: any) => ({
+        ...p,
+        formattedPrice: nf.format(Number(p.price)),
+      }));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                section: {
+                  id: section.id,
+                  name: section.name,
+                  subSection: false,
+                },
+                products: formatted,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    // 3) Tiene subsecciones: si viene subSectionName -> solo esa; si no, agrupar todas
+    // Ordenar subsecciones por su campo 'order'
+    const subSections = [...(section.subSections || [])].sort(
+      (a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)
+    );
+
+    const result: any = {
+      section: { id: section.id, name: section.name, subSection: true },
+      subSections: [] as any[],
+    };
+
+    // Si se especificó una subsección por nombre, devolver solo esa
+    if (subSectionName) {
+      const sub = subSections.find(
+        (s: any) => s.name.toLowerCase() === subSectionName.toLowerCase()
+      );
+      if (!sub) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  error: `Subsección no encontrada en la sección '${section.name}': ${subSectionName}`,
+                  subSections: subSections.map((s: any) => ({
+                    id: s.id,
+                    name: s.name,
+                    order: s.order,
+                  })),
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      const where: any = { sectionId: section.id, subSectionId: sub.id };
+      if (active !== undefined) where.active = active;
+
+      const items = await prisma.product.findMany({
+        where,
+        orderBy: [{ subSectionOrder: "asc" }],
+      });
+
+      const formatted = items.map((p: any) => ({
+        ...p,
+        formattedPrice: nf.format(Number(p.price)),
+      }));
+
+      result.subSections.push({
+        id: sub.id,
+        name: sub.name,
+        order: sub.order,
+        products: formatted,
+      });
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    }
+
+    // Si no se solicitó una subsección específica, listar todas
+    for (const sub of subSections) {
+      const where: any = { sectionId: section.id, subSectionId: sub.id };
+      if (active !== undefined) where.active = active;
+
+      const items = await prisma.product.findMany({
+        where,
+        orderBy: [{ subSectionOrder: "asc" }],
+      });
+
+      const formatted = items.map((p: any) => ({
+        ...p,
+        formattedPrice: nf.format(Number(p.price)),
+      }));
+
+      result.subSections.push({
+        id: sub.id,
+        name: sub.name,
+        order: sub.order,
+        products: formatted,
+      });
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
 /** 2) START: STDI Opción (local) **/
 export async function startStdio() {
   const transport = new StdioServerTransport();
