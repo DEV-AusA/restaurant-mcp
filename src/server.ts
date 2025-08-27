@@ -718,6 +718,116 @@ server.registerTool(
   }
 );
 
+// Tool: eliminar producto con recompacción de órdenes
+const deleteProductSchema = {
+  id: z.number().int().min(1).optional(),
+  name: z.string().min(1).optional(),
+} as const;
+
+server.registerTool(
+  "deleteProduct",
+  {
+    description:
+      "Elimina un producto por id o nombre y reordena compactando los índices en su sección o subsección según corresponda.",
+    inputSchema: deleteProductSchema,
+  },
+  async ({ id, name }, _extra) => {
+    console.log(
+      `[tool] deleteProduct called { id: ${id ?? "-"}, name: ${name ?? "-"} }`
+    );
+
+    if (!id && !name) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              { error: "Debe enviar 'id' o 'name'" },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    // Nota: esto asume 'name' único, igual que updateProduct
+    const where: any = id ? { id } : { name };
+    const existing = await prisma.product.findUnique({
+      where,
+      select: {
+        id: true,
+        sectionId: true,
+        subSectionId: true,
+      },
+    });
+
+    if (!existing) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "Producto no encontrado" }, null, 2),
+          },
+        ],
+      };
+    }
+
+    // Hacer todo dentro de una transacción para no dejar órdenes inconsistentes
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) Eliminar
+      const deleted = await tx.product.delete({ where: { id: existing.id } });
+
+      // 2) Recompactar según contenedor
+      let compacted = 0;
+      if (existing.subSectionId) {
+        // Dentro de una subsección: reordenar subSectionOrder desde 1
+        const items = await tx.product.findMany({
+          where: {
+            sectionId: existing.sectionId,
+            subSectionId: existing.subSectionId,
+          },
+          orderBy: { subSectionOrder: "asc" },
+          select: { id: true },
+        });
+        let pos = 1;
+        for (const it of items) {
+          await tx.product.update({
+            where: { id: it.id },
+            data: { subSectionOrder: pos++ },
+          });
+          compacted++;
+        }
+      } else {
+        // Top-level de sección: reordenar order desde 1 (manteniendo subSectionId en null)
+        const items = await tx.product.findMany({
+          where: { sectionId: existing.sectionId, subSectionId: null },
+          orderBy: { order: "asc" },
+          select: { id: true },
+        });
+        let pos = 1;
+        for (const it of items) {
+          await tx.product.update({
+            where: { id: it.id },
+            data: { order: pos++, subSectionOrder: 0 },
+          });
+          compacted++;
+        }
+      }
+
+      return { deletedId: deleted.id, compacted };
+    });
+
+    console.log(
+      `[tool] deleteProduct -> deletedId: ${result.deletedId}, compacted: ${result.compacted}`
+    );
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
 // Tool: productos por nombre de sección (case-insensitive)
 const getProductsBySectionNameSchema = {
   sectionName: z.string().min(1),
@@ -983,6 +1093,11 @@ export async function startHttp(port = 4000) {
     }
     const transport = transports[sid];
     await transport.handleRequest(req, res, req.body);
+  });
+
+  // Health check endpoint
+  app.get("/healthz", (_req, res) => {
+    res.status(200).json({ ok: true, uptime: process.uptime() });
   });
 
   app.listen(port, () => {
