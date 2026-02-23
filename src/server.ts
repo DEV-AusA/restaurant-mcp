@@ -1076,15 +1076,17 @@ export async function startHttp(port = 4000) {
 
   app.post("/", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
-
-  console.log("Headers:", req.headers);
-  console.log("Body:", req.body);
   
-    //sin sesion es initialize
-    if (!sessionId) {
+    let transport: StreamableHTTPServerTransport;
+  
+    if (sessionId && transports[sessionId]) {
+      //request con sesion existente
+      transport = transports[sessionId];
+    } else {
+      //nuevo transport (el SDK detectará si es initialize)
       const newSessionId = randomUUID();
   
-      const transport = new StreamableHTTPServerTransport({
+      transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => newSessionId,
         enableDnsRebindingProtection: true,
       });
@@ -1092,23 +1094,6 @@ export async function startHttp(port = 4000) {
       transports[newSessionId] = transport;
   
       await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-  
-      return;
-    }
-  
-    //con sesion debe existir transport
-    const transport = transports[sessionId];
-  
-    if (!transport) {
-      return res.status(400).json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Invalid session"
-        },
-        id: null
-      });
     }
   
     await transport.handleRequest(req, res, req.body);
@@ -1121,7 +1106,7 @@ export async function startHttp(port = 4000) {
 
   app.listen(port, () => {
     console.log(
-      `MCP Streamable HTTP listening on http://localhost:${port}/mcp`
+      `MCP Streamable HTTP listening on http://localhost:${port}/`
     );
   });
 
