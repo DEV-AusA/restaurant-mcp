@@ -1075,13 +1075,39 @@ export async function startHttp(port = 4000) {
   });
 
   app.post("/", async (req, res) => {
-    const sessionId = randomUUID();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => sessionId,
-      enableDnsRebindingProtection: true,
-    });
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
   
-    await server.connect(transport);
+    //sin sesion es initialize
+    if (!sessionId) {
+      const newSessionId = randomUUID();
+  
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId,
+        enableDnsRebindingProtection: true,
+      });
+  
+      transports[newSessionId] = transport;
+  
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+  
+      return;
+    }
+  
+    //con sesion debe existir transport
+    const transport = transports[sessionId];
+  
+    if (!transport) {
+      return res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Invalid session"
+        },
+        id: null
+      });
+    }
+  
     await transport.handleRequest(req, res, req.body);
   });
 
