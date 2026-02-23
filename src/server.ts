@@ -1082,13 +1082,16 @@ export async function startHttp(port = 4000) {
     if (sessionId && transports[sessionId]) {
       transport = transports[sessionId];
     } else {
+      const newSessionId = randomUUID();
+  
       transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
+        sessionIdGenerator: () => newSessionId,
         enableDnsRebindingProtection: true,
       });
   
-      await server.connect(transport); // SOLO cuando es nuevo
-      transports[transport.sessionId!] = transport;
+      transports[newSessionId] = transport;
+  
+      await server.connect(transport);
     }
   
     await transport.handleRequest(req, res, req.body);
