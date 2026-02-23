@@ -1048,7 +1048,8 @@ export async function startHttp(port = 4000) {
 
   app.use(cors({
     origin: "*",
-    exposedHeaders: ["mcp-session-id"]
+    exposedHeaders: ["mcp-session-id"],
+    allowedHeaders: ["Content-Type", "mcp-session-id"]
   }));
 
   app.use(express.json());
