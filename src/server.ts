@@ -1076,6 +1076,9 @@ export async function startHttp(port = 4000) {
 
   app.post("/", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
   
     //sin sesion es initialize
     if (!sessionId) {
