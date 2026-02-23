@@ -1073,32 +1073,14 @@ export async function startHttp(port = 4000) {
     next();
   });
 
-  app.all("/", async (req, res) => {
-    // Si es inicialización (cliente iniciando sesión), creamos transport y conectamos
-    const init = isInitializeRequest(req.body);
-    if (init) {
-      const sessionId = randomUUID();
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => sessionId,
-        enableDnsRebindingProtection: true,
-      });
-
-      transports[sessionId] = transport;
-      await server.connect(transport);
-
-      // el transport generalmente maneja la respuesta de init por su cuenta:
-      await transport.handleRequest(req, res, req.body);
-      return;
-    }
-
-    // Si no es init, el request debe traer header o query con sessionId
-    const sid = (req.headers["mcp-session-id"] || req.query.sessionId) as
-      | string
-      | undefined;
-    if (!sid || !transports[sid]) {
-      return res.status(400).send("Invalid or missing sessionId");
-    }
-    const transport = transports[sid];
+  app.post("/", async (req, res) => {
+    const sessionId = randomUUID();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => sessionId,
+      enableDnsRebindingProtection: true,
+    });
+  
+    await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   });
 
