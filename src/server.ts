@@ -1080,20 +1080,15 @@ export async function startHttp(port = 4000) {
     let transport: StreamableHTTPServerTransport;
   
     if (sessionId && transports[sessionId]) {
-      //request con sesion existente
       transport = transports[sessionId];
     } else {
-      //nuevo transport (el SDK detectará si es initialize)
-      const newSessionId = randomUUID();
-  
       transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => newSessionId,
+        sessionIdGenerator: () => randomUUID(),
         enableDnsRebindingProtection: true,
       });
   
-      transports[newSessionId] = transport;
-  
-      await server.connect(transport);
+      await server.connect(transport); // SOLO cuando es nuevo
+      transports[transport.sessionId!] = transport;
     }
   
     await transport.handleRequest(req, res, req.body);
