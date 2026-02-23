@@ -8,6 +8,7 @@ import express from "express";
 import { randomUUID } from "crypto";
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
+import cors from "cors";
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -1044,6 +1045,12 @@ export async function startStdio() {
 /** 3) START: Streamable HTTP (para exponer por HTTPS) **/
 export async function startHttp(port = 4000) {
   const app = express();
+
+  app.use(cors({
+    origin: "*",
+    exposedHeaders: ["mcp-session-id"]
+  }));
+
   app.use(express.json());
 
   // map sessionId => transport
@@ -1066,7 +1073,7 @@ export async function startHttp(port = 4000) {
     next();
   });
 
-  app.all("/mcp", async (req, res) => {
+  app.all("/", async (req, res) => {
     // Si es inicialización (cliente iniciando sesión), creamos transport y conectamos
     const init = isInitializeRequest(req.body);
     if (init) {
