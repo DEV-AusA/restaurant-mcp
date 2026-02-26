@@ -181,7 +181,7 @@ Puede requerir múltiples llamadas si falta información.
 
   inputSchema: {
     type: "object",
-    required: ["name", "price"],
+    required: [],
     additionalProperties: false,
     properties: {
       name: {
