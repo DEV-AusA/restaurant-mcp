@@ -43,7 +43,7 @@ const tools: Record<
 
 tools["getUsers"] = {
   description: `
-    Obtiene una lista paginada de los uruarios del restaurante.
+    Obtiene una lista paginada de los usuarios en el sistema del restaurante.
 
     Usar cuando:
     - El usuario pide ver todos los usuarios del sistema
@@ -80,6 +80,66 @@ tools["getUsers"] = {
   },
 };
 
+tools["getProducts"] = {
+  description:
+    "Devuelve todos los productos del restaurante. Permite filtrar por estado activo (active). Incluye información de sección y subsección, y agrega el campo 'formattedPrice' formateado en es-AR.",
+
+  inputSchema: {
+    type: "object",
+    properties: {
+      active: {
+        type: "boolean",
+        description:
+          "Si es true devuelve solo productos activos; si es false solo inactivos",
+      },
+    },
+  },
+
+  handler: async (args) => {
+    const active = typeof args?.active === "boolean" ? args.active : undefined;
+
+    const where: any = {};
+    if (active !== undefined) where.active = active;
+
+    const products = await prisma.product.findMany({
+      include: {
+        section: {
+          include: {
+            subSections: true,
+          },
+        },
+      },
+      orderBy: [
+        { sectionId: "asc" },
+        { order: "asc" },
+        { subSectionId: "asc" },
+        { subSectionOrder: "asc" },
+      ],
+      where,
+    });
+
+    const nf = new Intl.NumberFormat("es-AR", {
+      style: "decimal",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+
+    const formatted = products.map((p: any) => ({
+      ...p,
+      formattedPrice: nf.format(Number(p.price)),
+    }));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(formatted, null, 2),
+        },
+      ],
+    };
+  },
+};
+
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: Object.entries(tools).map(([name, def]) => ({
@@ -101,56 +161,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   return tool.handler(args);
 });
-
-// const getProductsSchema = {
-//   active: z.boolean().optional(),
-// } as const;
-
-// server.registerTool(
-//   "getProducts",
-//   {
-//     description:
-//       "Devuelve todos los productos (permite filtrar por sectionId, subSectionId y active). Agrega 'formattedPrice' (es-AR) en cada item.",
-//     inputSchema: getProductsSchema,
-//   },
-//   async ({ active }, _extra) => {
-//     console.log(`[tool] getProducts called { active: ${active ?? "-"} }`);
-//     const where: any = {};
-//     if (active !== undefined) where.active = active;
-//     const products = await prisma.product.findMany({
-//       include: {
-//         section: {
-//           include: {
-//             subSections: true,
-//           },
-//         },
-//       },
-//       orderBy: [
-//         { sectionId: "asc" },
-//         { order: "asc" },
-//         { subSectionId: "asc" },
-//         { subSectionOrder: "asc" },
-//       ],
-//       where,
-//     });
-
-//     const nf = new Intl.NumberFormat("es-AR", {
-//       style: "decimal",
-//       currency: "ARS",
-//       minimumFractionDigits: 0,
-//       maximumFractionDigits: 0,
-//     });
-
-//     const formatted = products.map((p: any) => ({
-//       ...p,
-//       formattedPrice: nf.format(Number(p.price)),
-//     }));
-
-//     return {
-//       content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
-//     };
-//   },
-// );
 
 // // Tool: productos por nombre (búsqueda parcial, case-insensitive)
 // const getProductsByNameSchema = {
