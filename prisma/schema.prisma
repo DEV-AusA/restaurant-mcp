@@ -22,7 +22,6 @@ model Product {
   subSectionId    Int?
   subSectionOrder Int  @default(0)
   active      Boolean  @default(true)
-  image       String?  @db.VarChar(255)
   order       Int      @default(0)
   section     Section  @relation(fields: [sectionId], references: [id])
   subSection      SubSection? @relation(fields: [subSectionId], references: [id], onDelete: SetNull)
