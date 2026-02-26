@@ -221,11 +221,26 @@ Puede requerir múltiples llamadas si falta información.
         throw new Error("Parameter 'name' is required.");
       }
 
-      const parsedPrice =
-        typeof args.price === "string" ? Number(args.price) : args.price;
+      let parsedPrice: number;
 
-      if (!parsedPrice || parsedPrice <= 0 || Number.isNaN(parsedPrice)) {
-        throw new Error("Parameter 'price' must be a positive number.");
+      if (typeof args.price === "string") {
+        const cleaned = args.price.replace(/[^\d.-]/g, "");
+        parsedPrice = Number(cleaned);
+      } else {
+        parsedPrice = args.price;
+      }
+
+      if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: "El precio debe ser un número positivo válido.",
+              }),
+            },
+          ],
+        };
       }
 
       if (!args.sectionId && !args.sectionName) {
