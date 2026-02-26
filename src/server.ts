@@ -217,8 +217,34 @@ Puede requerir múltiples llamadas si falta información.
     console.log("ARGS RECEIVED (createProduct):", args);
 
     try {
+      // 1️⃣ Paso conversacional: pedir nombre
       if (!args.name || typeof args.name !== "string") {
-        throw new Error("Parameter 'name' is required.");
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                step: "ask_name",
+                message: "¿Cuál es el nombre del producto?",
+              }),
+            },
+          ],
+        };
+      }
+
+      // 2️⃣ Paso conversacional: pedir precio
+      if (args.price === undefined) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                step: "ask_price",
+                message: `¿Cuál es el precio para "${args.name}"?`,
+              }),
+            },
+          ],
+        };
       }
 
       let parsedPrice: number;
