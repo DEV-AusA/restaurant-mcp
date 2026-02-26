@@ -163,25 +163,22 @@ tools["createProduct"] = {
   description: `
 Crea un nuevo producto en el restaurante.
 
-Requiere:
+Requiere obligatoriamente:
 - name (string)
 - price (number o string convertible a número)
-
-Debe indicarse:
 - sectionId o sectionName
 
-Comportamiento especial:
-- Si la sección tiene subsecciones y no se indica subSectionId o subSectionName, 
-  la herramienta devuelve la lista de subsecciones disponibles para que el usuario elija.
-- Si se indica subSectionName, se resuelve automáticamente al ID correspondiente.
-- El producto se inserta al final del orden correspondiente (order o subSectionOrder).
+Opcional:
+- subSectionId o subSectionName
 
-Puede requerir múltiples llamadas si falta información.
+Notas:
+- Si la sección tiene subsecciones, debe enviarse una subsección válida.
+- El producto se inserta al final del orden correspondiente (order o subSectionOrder).
 `.trim(),
 
   inputSchema: {
     type: "object",
-    required: [],
+    required: ["name", "price"],
     additionalProperties: false,
     properties: {
       name: {
@@ -217,34 +214,14 @@ Puede requerir múltiples llamadas si falta información.
     console.log("ARGS RECEIVED (createProduct):", args);
 
     try {
-      // 1️⃣ Paso conversacional: pedir nombre
+      //validacion obligatoria name
       if (!args.name || typeof args.name !== "string") {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                step: "ask_name",
-                message: "¿Cuál es el nombre del producto?",
-              }),
-            },
-          ],
-        };
+        throw new Error("Parameter 'name' is required and must be a string.");
       }
 
-      // 2️⃣ Paso conversacional: pedir precio
+      //validacion obligatoria price
       if (args.price === undefined) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                step: "ask_price",
-                message: `¿Cuál es el precio para "${args.name}"?`,
-              }),
-            },
-          ],
-        };
+        throw new Error("Parameter 'price' is required.");
       }
 
       let parsedPrice: number;
@@ -257,29 +234,14 @@ Puede requerir múltiples llamadas si falta información.
       }
 
       if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "El precio debe ser un número positivo válido.",
-              }),
-            },
-          ],
-        };
+        throw new Error("Parameter 'price' must be a positive number.");
       }
 
+      //validación seccion
       if (!args.sectionId && !args.sectionName) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "Debe enviar 'sectionId' o 'sectionName'",
-              }),
-            },
-          ],
-        };
+        throw new Error(
+          "Either 'sectionId' or 'sectionName' must be provided.",
+        );
       }
 
       let section: Prisma.SectionGetPayload<{
@@ -304,67 +266,32 @@ Puede requerir múltiples llamadas si falta información.
       }
 
       if (!section) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: "Sección no encontrada",
-              }),
-            },
-          ],
-        };
+        throw new Error("Section not found.");
       }
 
       const targetSectionId = section.id;
 
-      if (
-        section.subSection === true &&
-        !args.subSectionId &&
-        !args.subSectionName
-      ) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error:
-                  "La sección tiene subsecciones. Debe indicar 'subSectionId' o 'subSectionName'.",
-                subSections: section.subSections.map((s) => ({
-                  id: s.id,
-                  name: s.name,
-                })),
-              }),
-            },
-          ],
-        };
-      }
-
+      //validacion subseccion si aplica
       let targetSubSectionId: number | undefined = args.subSectionId;
 
-      if (!targetSubSectionId && args.subSectionName) {
-        const sub = section.subSections.find(
-          (s) => s.name.toLowerCase() === args.subSectionName!.toLowerCase(),
-        );
-
-        if (!sub) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  error: "Subsección no encontrada",
-                  subSections: section.subSections.map((s) => ({
-                    id: s.id,
-                    name: s.name,
-                  })),
-                }),
-              },
-            ],
-          };
+      if (section.subSection === true) {
+        if (!args.subSectionId && !args.subSectionName) {
+          throw new Error(
+            "This section requires a subSectionId or subSectionName.",
+          );
         }
 
-        targetSubSectionId = sub.id;
+        if (!targetSubSectionId && args.subSectionName) {
+          const sub = section.subSections.find(
+            (s) => s.name.toLowerCase() === args.subSectionName!.toLowerCase(),
+          );
+
+          if (!sub) {
+            throw new Error("Subsection not found.");
+          }
+
+          targetSubSectionId = sub.id;
+        }
       }
 
       const data: Prisma.ProductCreateInput = {
@@ -375,6 +302,7 @@ Puede requerir múltiples llamadas si falta información.
         },
       };
 
+      // 🔹 Ordenamiento dinámico
       if (section.subSection === true && targetSubSectionId) {
         const last = await prisma.product.findFirst({
           where: {
@@ -420,6 +348,7 @@ Puede requerir múltiples llamadas si falta información.
   },
 };
 
+//handler de las tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: Object.entries(tools).map(([name, def]) => ({
