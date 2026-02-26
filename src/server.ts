@@ -18,7 +18,6 @@ import cors from "cors";
 dotenv.config();
 const prisma = new PrismaClient();
 
-/** 1) crea el servidor MCP y registra herramientas (tools) **/
 const server = new Server(
   {
     name: "restaurant-mcp",
@@ -31,56 +30,45 @@ const server = new Server(
   },
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "getClients",
-        description: "Devuelve clientes (skip,take)",
-        inputSchema: {
-          type: "object",
-          properties: {
-            skip: { type: "number" },
-            take: { type: "number" },
-          },
-        },
-      },
-    ],
-  };
-});
+type ToolHandler = (args: any) => Promise<any>;
 
-// Tool: listar clientes (paginada)
-// SDK espera ZodRawShape, no JSON Schema
-const getClientsSchema = {
-  skip: z.number().int().min(0).optional(),
-  take: z.number().int().min(1).optional(),
-} as const;
+const tools: Record<
+  string,
+  {
+    description: string;
+    inputSchema: any;
+    handler: ToolHandler;
+  }
+> = {};
 
-// server.registerTool(
-//   "getClients",
-//   {
-//     description: "Devuelve clientes (skip,take)",
-//     inputSchema: getClientsSchema,
-//   },
-//   async ({ skip = 0, take = 50 }, _extra) => {
-//     console.log(`[tool] getClients called { skip: ${skip}, take: ${take} }`);
-//     const rows = await prisma.user.findMany({ skip, take });
-//     return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
-//   }
-// );
+tools["getClients"] = {
+  description: `
+    Obtiene una lista paginada de clientes del restaurante.
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+    Usar cuando:
+    - El usuario pide ver clientes
+    - Necesita listado administrativo
+    - Solicita exportación de clientes
 
-  if (name === "getClients") {
+    Parámetros:
+    - skip: cantidad de registros a omitir (paginación)
+    - take: cantidad máxima de registros a devolver
+
+    Devuelve:
+    - Lista de usuarios con sus campos almacenados en la base de datos
+            `.trim(),
+  inputSchema: {
+    type: "object",
+    properties: {
+      skip: { type: "number" },
+      take: { type: "number" },
+    },
+  },
+  handler: async (args) => {
     const skip = typeof args?.skip === "number" ? args.skip : 0;
-
     const take = typeof args?.take === "number" ? args.take : 50;
 
-    const rows = await prisma.user.findMany({
-      skip,
-      take,
-    });
+    const rows = await prisma.user.findMany({ skip, take });
 
     return {
       content: [
@@ -90,9 +78,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       ],
     };
+  },
+};
+
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  return {
+    tools: Object.entries(tools).map(([name, def]) => ({
+      name,
+      description: def.description,
+      inputSchema: def.inputSchema,
+    })),
+  };
+});
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  const tool = tools[name];
+
+  if (!tool) {
+    throw new Error(`Unknown tool: ${name}`);
   }
 
-  throw new Error(`Unknown tool: ${name}`);
+  return tool.handler(args);
 });
 
 // const getProductsSchema = {
