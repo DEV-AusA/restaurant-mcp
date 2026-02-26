@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,98 +8,87 @@ datasource db {
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
-  sectionId   Int
+  id              Int            @id @default(autoincrement())
+  name            String         @unique
+  description     String?
+  price           Decimal        @db.Decimal(10, 2)
+  sectionId       Int
+  order           Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  subSectionOrder Int            @default(0)
+  active          Boolean        @default(true)
   subSectionId    Int?
-  subSectionOrder Int  @default(0)
-  active      Boolean  @default(true)
-  order       Int      @default(0)
-  section     Section  @relation(fields: [sectionId], references: [id])
-  subSection      SubSection? @relation(fields: [subSectionId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  section         Section        @relation(fields: [sectionId], references: [id])
+  subSection      SubSection?    @relation(fields: [subSectionId], references: [id])
+  ProductImage    ProductImage[]
 
-  @@index([sectionId])       // opcional, acelera búsquedas por sección
+  @@index([sectionId])
   @@index([subSectionId])
 }
 
 model Section {
-  id          Int  @id @default(autoincrement())
-  name        String  @unique
-  order       Int  @unique @default(0)
-  subSection  Boolean @default(false)
-  // Relacion uno a muchos con Products y subSections
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  order       Int          @unique @default(0)
+  subSection  Boolean      @default(false)
   products    Product[]
   subSections SubSection[]
 }
 
 model SubSection {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  order     Int      @default(0)
-  section   Section  @relation(fields: [sectionId], references: [id])
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  order     Int       @default(0)
   sectionId Int
-  products    Product[] // inversa
+  products  Product[]
+  section   Section   @relation(fields: [sectionId], references: [id])
 
   @@index([sectionId])
 }
 
 model AuditLog {
-  id         Int       @id @default(autoincrement())
-  model      String    // "Product", "Section" o "SubSection"
-  entityId   Int       // id del registro afectado
-  operation  String    // "CREATE" | "UPDATE" | "DELETE"
-  before     Json?     // estado previo (null si CREATE)
-  after      Json?     // estado posterior (null si DELETE)
-  changedBy  String?   // opcional: quién hizo el cambio
-  changedAt  DateTime  @default(now())
+  id        Int      @id @default(autoincrement())
+  model     String
+  entityId  Int
+  operation String
+  before    Json?
+  after     Json?
+  changedBy String?
+  changedAt DateTime @default(now())
 }
-
-enum UserRole {
-  ADMIN
-  MANAGER
-  STAFF
-  USER
-}
-
 
 model User {
   id             String    @id @default(cuid())
   name           String
-  email          String   @unique
+  email          String    @unique
   emailVerified  DateTime?
   image          String?
-  // campo para credenciales propias:
   hashedPassword String?
-  role           UserRole    @default(USER)
   createdAt      DateTime  @default(now())
-  lastLoginAt    DateTime?
-  updatedAt      DateTime  @updatedAt
-  phone          String?
   isActive       Boolean   @default(true)
-  // relaciones NextAuth
+  lastLoginAt    DateTime?
+  phone          String?
+  role           UserRole  @default(USER)
+  updatedAt      DateTime  @updatedAt
   accounts       Account[]
   sessions       Session[]
 }
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String? 
-  access_token       String?
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?
-  session_state      String?
-
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -115,8 +98,7 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -125,4 +107,22 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model ProductImage {
+  id        Int      @id @default(autoincrement())
+  url       String   @db.VarChar(255)
+  isMain    Boolean  @default(false)
+  productId Int
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  publicId  String   @db.VarChar(255)
+  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  STAFF
+  USER
 }
