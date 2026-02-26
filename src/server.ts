@@ -82,7 +82,7 @@ tools["getUsers"] = {
 
 tools["getProducts"] = {
   description:
-    "Devuelve todos los productos del restaurante. Permite filtrar por estado activo (active). Incluye información de sección y subsección, y agrega el campo 'formattedPrice' formateado en es-AR.",
+    "Devuelve todos los productos del restaurante. Permite filtrar por estado activo (active). Incluye información de sección y subsección y agrega formattedPrice en es-AR.",
 
   inputSchema: {
     type: "object",
@@ -93,50 +93,62 @@ tools["getProducts"] = {
           "Si es true devuelve solo productos activos; si es false solo inactivos",
       },
     },
+    additionalProperties: false,
   },
 
   handler: async (args) => {
-    const active = typeof args?.active === "boolean" ? args.active : undefined;
+    console.log("ARGS RECEIVED:", args);
+
+    const active =
+      args && typeof args.active === "boolean" ? args.active : undefined;
 
     const where: any = {};
-    if (active !== undefined) where.active = active;
 
-    const products = await prisma.product.findMany({
-      include: {
-        section: {
-          include: {
-            subSections: true,
+    if (active !== undefined) {
+      where.active = active;
+    }
+
+    try {
+      const products = await prisma.product.findMany({
+        include: {
+          section: {
+            include: {
+              subSections: true,
+            },
           },
         },
-      },
-      orderBy: [
-        { sectionId: "asc" },
-        { order: "asc" },
-        { subSectionId: "asc" },
-        { subSectionOrder: "asc" },
-      ],
-      where,
-    });
+        orderBy: [
+          { sectionId: "asc" },
+          { order: "asc" },
+          { subSectionId: "asc" },
+          { subSectionOrder: "asc" },
+        ],
+        where,
+      });
 
-    const nf = new Intl.NumberFormat("es-AR", {
-      style: "decimal",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
+      const nf = new Intl.NumberFormat("es-AR", {
+        style: "decimal",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      });
 
-    const formatted = products.map((p: any) => ({
-      ...p,
-      formattedPrice: nf.format(Number(p.price)),
-    }));
+      const formatted = products.map((p: any) => ({
+        ...p,
+        formattedPrice: nf.format(Number(p.price)),
+      }));
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(formatted, null, 2),
-        },
-      ],
-    };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(formatted, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("Error in getProducts:", error);
+      throw error;
+    }
   },
 };
 
