@@ -41,6 +41,8 @@ const tools: Record<
   }
 > = {};
 
+//Tools del MCP
+
 tools["getUsers"] = {
   description: `
     Obtiene una lista paginada de los usuarios en el sistema del restaurante.
@@ -174,67 +176,134 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   return tool.handler(args);
 });
 
-// // Tool: productos por nombre (búsqueda parcial, case-insensitive)
-// const getProductsByNameSchema = {
-//   name: z.string().min(1),
-//   sectionId: z.number().int().min(1).optional(),
-//   subSectionId: z.number().int().min(1).optional(),
-//   active: z.boolean().optional(),
-// } as const;
+import { Prisma } from "@prisma/client";
 
-// server.registerTool(
-//   "getProductsByName",
-//   {
-//     description:
-//       "Busca productos por nombre (coincidencia parcial, case-insensitive). Permite filtrar por sectionId, subSectionId y active. Agrega 'formattedPrice' (es-AR).",
-//     inputSchema: getProductsByNameSchema,
-//   },
-//   async ({ name, sectionId, subSectionId, active }, _extra) => {
-//     console.log(
-//       `[tool] getProductsByName called { name: ${name}, sectionId: ${
-//         sectionId ?? "-"
-//       }, subSectionId: ${subSectionId ?? "-"}, active: ${active ?? "-"} }`,
-//     );
+type GetProductsByNameArgs = {
+  name: string;
+  sectionId?: number;
+  subSectionId?: number;
+  active?: boolean;
+};
 
-//     const where: any = {
-//       name: { contains: name, mode: "insensitive" },
-//     };
-//     if (sectionId) where.sectionId = sectionId;
-//     if (subSectionId) where.subSectionId = subSectionId;
-//     if (active !== undefined) where.active = active;
+tools["getProductsByName"] = {
+  description: `
+Busca productos cuyo nombre contenga el texto indicado (coincidencia parcial, case-insensitive).
 
-//     const products = await prisma.product.findMany({
-//       include: {
-//         section: {
-//           include: { subSections: true },
-//         },
-//       },
-//       orderBy: [
-//         { sectionId: "asc" },
-//         { order: "asc" },
-//         { subSectionId: "asc" },
-//         { subSectionOrder: "asc" },
-//       ],
-//       where,
-//     });
+Usar cuando:
+- El usuario busque productos por nombre.
+- El usuario escriba parte del nombre de un producto.
+- Se necesite filtrar resultados por sección, subsección o estado activo.
 
-//     const nf = new Intl.NumberFormat("es-AR", {
-//       style: "currency",
-//       currency: "ARS",
-//       minimumFractionDigits: 2,
-//       maximumFractionDigits: 2,
-//     });
+Filtros opcionales:
+- sectionId: filtra por sección específica.
+- subSectionId: filtra por subsección específica.
+- active: filtra por estado activo/inactivo.
 
-//     const formatted = products.map((p: any) => ({
-//       ...p,
-//       formattedPrice: nf.format(Number(p.price)),
-//     }));
+Devuelve la lista de productos ordenados jerárquicamente e incluye el campo adicional 'formattedPrice' formateado en moneda ARS (es-AR).
+`.trim(),
 
-//     return {
-//       content: [{ type: "text", text: JSON.stringify(formatted, null, 2) }],
-//     };
-//   },
-// );
+  inputSchema: {
+    type: "object",
+    required: ["name"],
+    additionalProperties: false,
+    properties: {
+      name: {
+        type: "string",
+        description:
+          "Texto a buscar dentro del nombre del producto (mínimo 1 carácter)",
+        minLength: 1,
+      },
+      sectionId: {
+        type: "number",
+        description: "ID de la sección para filtrar",
+      },
+      subSectionId: {
+        type: "number",
+        description: "ID de la subsección para filtrar",
+      },
+      active: {
+        type: "boolean",
+        description:
+          "Si es true devuelve solo activos; si es false solo inactivos",
+      },
+    },
+  },
+
+  handler: async (args: GetProductsByNameArgs) => {
+    console.log("ARGS RECEIVED (getProductsByName):", args);
+
+    try {
+      // Validación defensiva (equivalente a Zod básico)
+      if (
+        !args ||
+        typeof args.name !== "string" ||
+        args.name.trim().length === 0
+      ) {
+        throw new Error(
+          "Parameter 'name' is required and must be a non-empty string.",
+        );
+      }
+
+      const where: Prisma.ProductWhereInput = {
+        name: {
+          contains: args.name,
+          mode: "insensitive",
+        },
+      };
+
+      if (typeof args.sectionId === "number") {
+        where.sectionId = args.sectionId;
+      }
+
+      if (typeof args.subSectionId === "number") {
+        where.subSectionId = args.subSectionId;
+      }
+
+      if (typeof args.active === "boolean") {
+        where.active = args.active;
+      }
+
+      const products = await prisma.product.findMany({
+        include: {
+          section: {
+            include: { subSections: true },
+          },
+        },
+        orderBy: [
+          { sectionId: "asc" },
+          { order: "asc" },
+          { subSectionId: "asc" },
+          { subSectionOrder: "asc" },
+        ],
+        where,
+      });
+
+      const nf = new Intl.NumberFormat("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+      const formatted = products.map((p) => ({
+        ...p,
+        formattedPrice: nf.format(Number(p.price)),
+      }));
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(formatted, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("Error in getProductsByName:", error);
+      throw error;
+    }
+  },
+};
 
 // // Tool: contar productos (con filtros opcionales)
 // const getProductsCountSchema = {
