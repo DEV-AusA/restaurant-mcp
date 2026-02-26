@@ -41,14 +41,13 @@ const tools: Record<
   }
 > = {};
 
-tools["getClients"] = {
+tools["getUsers"] = {
   description: `
-    Obtiene una lista paginada de clientes del restaurante.
+    Obtiene una lista paginada de los uruarios del restaurante.
 
     Usar cuando:
-    - El usuario pide ver clientes
+    - El usuario pide ver todos los usuarios del sistema
     - Necesita listado administrativo
-    - Solicita exportación de clientes
 
     Parámetros:
     - skip: cantidad de registros a omitir (paginación)
