@@ -41,6 +41,7 @@ const tools: Record<
 type CreateProductArgs = {
   name: string;
   price: number | string;
+  description?: string;
   sectionId?: number;
   sectionName?: string;
   subSectionId?: number;
@@ -169,10 +170,12 @@ tools["createProduct"] = {
   - sectionId o sectionName
   
   Opcional:
+  - description (string): descripción del producto
   - subSectionId o subSectionName
   
   Notas:
   - Si la sección tiene subsecciones, debe enviarse una subsección válida.
+  - El agente debe preguntar al usuario si desea agregar una descripción antes de llamar a esta tool.
   - El producto se inserta al final del orden correspondiente (order o subSectionOrder).
   `.trim(),
   inputSchema: {
@@ -180,6 +183,10 @@ tools["createProduct"] = {
     properties: {
       name: { type: "string" },
       price: { type: "number" },
+      description: {
+        type: "string",
+        description: "Descripción opcional del producto",
+      },
       sectionId: { type: "number" },
       sectionName: { type: "string" },
       subSectionId: { type: "number" },
@@ -192,6 +199,7 @@ tools["createProduct"] = {
     const {
       name,
       price,
+      description,
       sectionId,
       sectionName,
       subSectionId,
@@ -305,7 +313,12 @@ tools["createProduct"] = {
         targetSubSectionId = sub.id;
       }
 
-      let data: any = { name, price, sectionId: targetSectionId };
+      let data: any = {
+        name,
+        price,
+        description: description ?? null,
+        sectionId: targetSectionId,
+      };
 
       if (section.subSection === true && targetSubSectionId) {
         const lastInSub = await prisma.product.findFirst({
