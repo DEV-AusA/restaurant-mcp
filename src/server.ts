@@ -159,152 +159,345 @@ tools["getProducts"] = {
   },
 };
 
+// tools["createProduct"] = {
+//   description: `
+// Crea un nuevo producto en el restaurante.
+
+// Requiere obligatoriamente:
+// - name (string)
+// - price (number o string convertible a número)
+// - sectionId o sectionName
+
+// Opcional:
+// - subSectionId o subSectionName
+
+// Notas:
+// - Si la sección tiene subsecciones, debe enviarse una subsección válida.
+// - El producto se inserta al final del orden correspondiente (order o subSectionOrder).
+// `.trim(),
+
+//   inputSchema: {
+//     type: "object",
+//     required: ["name", "price"],
+//     additionalProperties: false,
+//     properties: {
+//       name: {
+//         type: "string",
+//         minLength: 1,
+//         description: "Nombre del producto",
+//       },
+//       price: {
+//         type: ["number", "string"],
+//         description:
+//           "Precio del producto. Puede enviarse como número o string convertible.",
+//       },
+//       sectionId: {
+//         type: "number",
+//         description: "ID de la sección destino",
+//       },
+//       sectionName: {
+//         type: "string",
+//         description: "Nombre de la sección (case-insensitive)",
+//       },
+//       subSectionId: {
+//         type: "number",
+//         description: "ID de la subsección",
+//       },
+//       subSectionName: {
+//         type: "string",
+//         description: "Nombre de la subsección (case-insensitive)",
+//       },
+//     },
+//   },
+
+//   handler: async (args: CreateProductArgs) => {
+//     console.log("ARGS RECEIVED (createProduct):", args);
+
+//     try {
+//       //validacion obligatoria name
+//       if (!args.name || typeof args.name !== "string") {
+//         throw new Error("Parameter 'name' is required and must be a string.");
+//       }
+
+//       //validacion obligatoria price
+//       if (args.price === undefined) {
+//         throw new Error("Parameter 'price' is required.");
+//       }
+
+//       let parsedPrice: number;
+
+//       if (typeof args.price === "string") {
+//         const cleaned = args.price.replace(/[^\d.-]/g, "");
+//         parsedPrice = Number(cleaned);
+//       } else {
+//         parsedPrice = args.price;
+//       }
+
+//       if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+//         throw new Error("Parameter 'price' must be a positive number.");
+//       }
+
+//       //validación seccion
+//       if (!args.sectionId && !args.sectionName) {
+//         throw new Error(
+//           "Either 'sectionId' or 'sectionName' must be provided.",
+//         );
+//       }
+
+//       let section: Prisma.SectionGetPayload<{
+//         include: { subSections: true };
+//       }> | null = null;
+
+//       if (typeof args.sectionId === "number") {
+//         section = await prisma.section.findUnique({
+//           where: { id: args.sectionId },
+//           include: { subSections: true },
+//         });
+//       } else if (typeof args.sectionName === "string") {
+//         section = await prisma.section.findFirst({
+//           where: {
+//             name: {
+//               equals: args.sectionName,
+//               mode: "insensitive",
+//             },
+//           },
+//           include: { subSections: true },
+//         });
+//       }
+
+//       if (!section) {
+//         throw new Error("Section not found.");
+//       }
+
+//       const targetSectionId = section.id;
+
+//       //validacion subseccion si aplica
+//       let targetSubSectionId: number | undefined = args.subSectionId;
+
+//       if (section.subSection === true) {
+//         if (!args.subSectionId && !args.subSectionName) {
+//           throw new Error(
+//             "This section requires a subSectionId or subSectionName.",
+//           );
+//         }
+
+//         if (!targetSubSectionId && args.subSectionName) {
+//           const sub = section.subSections.find(
+//             (s) => s.name.toLowerCase() === args.subSectionName!.toLowerCase(),
+//           );
+
+//           if (!sub) {
+//             throw new Error("Subsection not found.");
+//           }
+
+//           targetSubSectionId = sub.id;
+//         }
+//       }
+
+//       const data: Prisma.ProductCreateInput = {
+//         name: args.name,
+//         price: parsedPrice,
+//         section: {
+//           connect: { id: targetSectionId },
+//         },
+//       };
+
+//       // 🔹 Ordenamiento dinámico
+//       if (section.subSection === true && targetSubSectionId) {
+//         const last = await prisma.product.findFirst({
+//           where: {
+//             sectionId: targetSectionId,
+//             subSectionId: targetSubSectionId,
+//           },
+//           orderBy: { subSectionOrder: "desc" },
+//           select: { subSectionOrder: true },
+//         });
+
+//         data.subSection = {
+//           connect: { id: targetSubSectionId },
+//         };
+
+//         data.subSectionOrder = (last?.subSectionOrder ?? 0) + 1;
+//       } else {
+//         const last = await prisma.product.findFirst({
+//           where: {
+//             sectionId: targetSectionId,
+//             subSectionId: null,
+//           },
+//           orderBy: { order: "desc" },
+//           select: { order: true },
+//         });
+
+//         data.order = (last?.order ?? 0) + 1;
+//       }
+
+//       const product = await prisma.product.create({ data });
+
+//       return {
+//         content: [
+//           {
+//             type: "text",
+//             text: JSON.stringify(product, null, 2),
+//           },
+//         ],
+//       };
+//     } catch (error) {
+//       console.error("Error in createProduct:", error);
+//       throw error;
+//     }
+//   },
+// };
+
 tools["createProduct"] = {
   description: `
-Crea un nuevo producto en el restaurante.
-
-Requiere obligatoriamente:
-- name (string)
-- price (number o string convertible a número)
-- sectionId o sectionName
-
-Opcional:
-- subSectionId o subSectionName
-
-Notas:
-- Si la sección tiene subsecciones, debe enviarse una subsección válida.
-- El producto se inserta al final del orden correspondiente (order o subSectionOrder).
-`.trim(),
-
+  Crea un nuevo producto en el restaurante.
+  
+  Requiere obligatoriamente:
+  - name (string)
+  - price (number o string convertible a número)
+  - sectionId o sectionName
+  
+  Opcional:
+  - subSectionId o subSectionName
+  
+  Notas:
+  - Si la sección tiene subsecciones, debe enviarse una subsección válida.
+  - El producto se inserta al final del orden correspondiente (order o subSectionOrder).
+  `.trim(),
   inputSchema: {
     type: "object",
+    properties: {
+      name: { type: "string" },
+      price: { type: "number" },
+      sectionId: { type: "number" },
+      sectionName: { type: "string" },
+      subSectionId: { type: "number" },
+      subSectionName: { type: "string" },
+    },
     required: ["name", "price"],
     additionalProperties: false,
-    properties: {
-      name: {
-        type: "string",
-        minLength: 1,
-        description: "Nombre del producto",
-      },
-      price: {
-        type: ["number", "string"],
-        description:
-          "Precio del producto. Puede enviarse como número o string convertible.",
-      },
-      sectionId: {
-        type: "number",
-        description: "ID de la sección destino",
-      },
-      sectionName: {
-        type: "string",
-        description: "Nombre de la sección (case-insensitive)",
-      },
-      subSectionId: {
-        type: "number",
-        description: "ID de la subsección",
-      },
-      subSectionName: {
-        type: "string",
-        description: "Nombre de la subsección (case-insensitive)",
-      },
-    },
   },
-
   handler: async (args: CreateProductArgs) => {
-    console.log("ARGS RECEIVED (createProduct):", args);
+    const {
+      name,
+      price,
+      sectionId,
+      sectionName,
+      subSectionId,
+      subSectionName,
+    } = args;
+
+    console.log(
+      `[tool] createProduct called { name: ${name}, price: ${price}, sectionId: ${
+        sectionId ?? "-"
+      }, sectionName: ${sectionName ?? "-"}, subSectionId: ${
+        subSectionId ?? "-"
+      }, subSectionName: ${subSectionName ?? "-"} }`,
+    );
+
+    if (!sectionId && !sectionName) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Debe enviar 'sectionId' o 'sectionName'",
+            }),
+          },
+        ],
+      };
+    }
 
     try {
-      //validacion obligatoria name
-      if (!args.name || typeof args.name !== "string") {
-        throw new Error("Parameter 'name' is required and must be a string.");
-      }
+      let section: any | null = null;
 
-      //validacion obligatoria price
-      if (args.price === undefined) {
-        throw new Error("Parameter 'price' is required.");
-      }
-
-      let parsedPrice: number;
-
-      if (typeof args.price === "string") {
-        const cleaned = args.price.replace(/[^\d.-]/g, "");
-        parsedPrice = Number(cleaned);
-      } else {
-        parsedPrice = args.price;
-      }
-
-      if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
-        throw new Error("Parameter 'price' must be a positive number.");
-      }
-
-      //validación seccion
-      if (!args.sectionId && !args.sectionName) {
-        throw new Error(
-          "Either 'sectionId' or 'sectionName' must be provided.",
-        );
-      }
-
-      let section: Prisma.SectionGetPayload<{
-        include: { subSections: true };
-      }> | null = null;
-
-      if (typeof args.sectionId === "number") {
+      if (sectionId) {
         section = await prisma.section.findUnique({
-          where: { id: args.sectionId },
+          where: { id: sectionId },
           include: { subSections: true },
         });
-      } else if (typeof args.sectionName === "string") {
+        if (!section) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: `Sección no encontrada: id=${sectionId}`,
+                }),
+              },
+            ],
+          };
+        }
+      } else if (sectionName) {
         section = await prisma.section.findFirst({
-          where: {
-            name: {
-              equals: args.sectionName,
-              mode: "insensitive",
-            },
-          },
+          where: { name: { equals: sectionName, mode: "insensitive" } },
           include: { subSections: true },
         });
-      }
-
-      if (!section) {
-        throw new Error("Section not found.");
-      }
-
-      const targetSectionId = section.id;
-
-      //validacion subseccion si aplica
-      let targetSubSectionId: number | undefined = args.subSectionId;
-
-      if (section.subSection === true) {
-        if (!args.subSectionId && !args.subSectionName) {
-          throw new Error(
-            "This section requires a subSectionId or subSectionName.",
-          );
-        }
-
-        if (!targetSubSectionId && args.subSectionName) {
-          const sub = section.subSections.find(
-            (s) => s.name.toLowerCase() === args.subSectionName!.toLowerCase(),
-          );
-
-          if (!sub) {
-            throw new Error("Subsection not found.");
-          }
-
-          targetSubSectionId = sub.id;
+        if (!section) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: `Sección no encontrada: ${sectionName}`,
+                }),
+              },
+            ],
+          };
         }
       }
 
-      const data: Prisma.ProductCreateInput = {
-        name: args.name,
-        price: parsedPrice,
-        section: {
-          connect: { id: targetSectionId },
-        },
-      };
+      const targetSectionId = section.id as number;
 
-      // 🔹 Ordenamiento dinámico
+      if (section.subSection === true && !subSectionId && !subSectionName) {
+        const subs = (section.subSections || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+        }));
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error:
+                  "La sección tiene subsecciones. Debe indicar 'subSectionId' o 'subSectionName'.",
+                subSections: subs,
+                message:
+                  "Seleccione una subsección y vuelva a llamar a createProduct con subSectionId o subSectionName.",
+              }),
+            },
+          ],
+        };
+      }
+
+      let targetSubSectionId: number | undefined = subSectionId;
+      if (!targetSubSectionId && subSectionName) {
+        const sub = section.subSections.find(
+          (s: any) => s.name.toLowerCase() === subSectionName.toLowerCase(),
+        );
+        if (!sub) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: `Subsección no encontrada en la sección '${section.name}': ${subSectionName}`,
+                  subSections: (section.subSections || []).map((s: any) => ({
+                    id: s.id,
+                    name: s.name,
+                  })),
+                }),
+              },
+            ],
+          };
+        }
+        targetSubSectionId = sub.id;
+      }
+
+      let data: any = { name, price, sectionId: targetSectionId };
+
       if (section.subSection === true && targetSubSectionId) {
-        const last = await prisma.product.findFirst({
+        const lastInSub = await prisma.product.findFirst({
           where: {
             sectionId: targetSectionId,
             subSectionId: targetSubSectionId,
@@ -312,37 +505,27 @@ Notas:
           orderBy: { subSectionOrder: "desc" },
           select: { subSectionOrder: true },
         });
-
-        data.subSection = {
-          connect: { id: targetSubSectionId },
-        };
-
-        data.subSectionOrder = (last?.subSectionOrder ?? 0) + 1;
+        const nextSubOrder = (lastInSub?.subSectionOrder ?? 0) + 1;
+        data.subSectionId = targetSubSectionId;
+        data.subSectionOrder = nextSubOrder;
       } else {
-        const last = await prisma.product.findFirst({
-          where: {
-            sectionId: targetSectionId,
-            subSectionId: null,
-          },
+        const lastInSection = await prisma.product.findFirst({
+          where: { sectionId: targetSectionId, subSectionId: null },
           orderBy: { order: "desc" },
           select: { order: true },
         });
-
-        data.order = (last?.order ?? 0) + 1;
+        const nextOrder = (lastInSection?.order ?? 0) + 1;
+        data.subSectionId = null;
+        data.order = nextOrder;
       }
 
       const product = await prisma.product.create({ data });
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(product, null, 2),
-          },
-        ],
+        content: [{ type: "text", text: JSON.stringify(product, null, 2) }],
       };
     } catch (error) {
-      console.error("Error in createProduct:", error);
+      console.error("[tool] createProduct error:", error);
       throw error;
     }
   },
