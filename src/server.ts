@@ -507,620 +507,332 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   return tool.handler(args);
 });
 
-// // Tool: contar productos (con filtros opcionales)
-// const getProductsCountSchema = {
-//   sectionId: z.number().int().min(1).optional(),
-//   subSectionId: z.number().int().min(1).optional(),
-//   active: z.boolean().optional(),
-// } as const;
+type UpdateProductArgs = {
+  id?: number;
+  name?: string;
+  newName?: string;
+  newPrice?: number;
+  newDescription?: string;
+  newSectionId?: number;
+  newSectionName?: string;
+  newSubSectionId?: number;
+  newSubSectionName?: string;
+};
 
-// server.registerTool(
-//   "getProductsCount",
-//   {
-//     description:
-//       "Devuelve el conteo total de productos (permite filtrar por sectionId, subSectionId y active)",
-//     inputSchema: getProductsCountSchema,
-//   },
-//   async ({ sectionId, subSectionId, active }, _extra) => {
-//     console.log(
-//       `[tool] getProductsCount called { sectionId: ${
-//         sectionId ?? "-"
-//       }, subSectionId: ${subSectionId ?? "-"}, active: ${active ?? "-"} }`,
-//     );
-//     const where: any = {};
-//     if (sectionId) where.sectionId = sectionId;
-//     if (subSectionId) where.subSectionId = subSectionId;
-//     if (active !== undefined) where.active = active;
-//     const count = await prisma.product.count({ where });
-//     return { content: [{ type: "text", text: JSON.stringify({ count }) }] };
-//   },
-// );
+tools["updateProduct"] = {
+  description: `
+Actualiza un producto existente del restaurante.
 
-// // Tool: actualizar descripción de un producto
-// const updateProductSchema = {
-//   id: z.number().int().min(1).optional(),
-//   name: z.string().min(1).optional(),
-//   description: z.string().optional(),
-//   active: z.boolean().optional(),
-//   price: z.coerce.number().positive().optional(),
-//   sectionId: z.number().int().min(1).optional(),
-//   sectionName: z.string().min(1).optional(),
-//   subSectionId: z.number().int().min(1).optional(),
-//   subSectionName: z.string().min(1).optional(),
-//   subSectionOrder: z.number().int().min(1).optional(),
-//   order: z.number().int().min(0).optional(),
-// } as const;
+Para identificar el producto, requiere al menos uno de:
+- id (number): id del producto
+- name (string): nombre exacto del producto actual
 
-// server.registerTool(
-//   "updateProduct",
-//   {
-//     description:
-//       "Actualiza campos de un producto por id o nombre (name/description/active/price/sectionId/sectionName/subSectionId/subSectionName/subSectionOrder/order). Si se mueve a una sección con subsecciones y no se indica subsección, devuelve la lista para elegir. Si se indica subSectionOrder, reordena el producto dentro de su subsección.",
-//     inputSchema: updateProductSchema,
-//   },
-//   async (
-//     {
-//       id,
-//       name,
-//       description,
-//       active,
-//       price,
-//       sectionId,
-//       sectionName,
-//       subSectionId,
-//       subSectionName,
-//       subSectionOrder,
-//       order,
-//     },
-//     _extra,
-//   ) => {
-//     console.log(
-//       `[tool] updateProduct called { id: ${id ?? "-"}, name: ${
-//         name ?? "-"
-//       } }, active: ${active ?? "-"}, price: ${price ?? "-"}, sectionId: ${
-//         sectionId ?? "-"
-//       }, sectionName: ${sectionName ?? "-"}, subSectionId: ${
-//         subSectionId ?? "-"
-//       }, subSectionName: ${subSectionName ?? "-"}, subSectionOrder: ${
-//         subSectionOrder ?? "-"
-//       }, order: ${order ?? "-"}`,
-//     );
-//     // Debe indicar cómo identificar el producto
-//     if (!id && !name) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify({ error: "Debe enviar id o name" }),
-//           },
-//         ],
-//       };
-//     }
-//     // Debe enviar al menos un campo actualizable
-//     if (
-//       !active &&
-//       !price &&
-//       !sectionId &&
-//       !sectionName &&
-//       !subSectionId &&
-//       !subSectionName &&
-//       subSectionOrder === undefined &&
-//       order === undefined &&
-//       !description &&
-//       !name
-//     ) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify({
-//               error:
-//                 "Debe enviar algún campo para actualizar: name, description, active, price, sectionId/sectionName, subSectionId/subSectionName, subSectionOrder u order",
-//             }),
-//           },
-//         ],
-//       };
-//     }
-//     const where: any = id ? { id } : { name };
-//     const existing = await prisma.product.findUnique({
-//       where,
-//       include: {
-//         section: { include: { subSections: true } },
-//         subSection: true,
-//       },
-//     });
-//     if (!existing) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify({ error: "Producto no encontrado" }),
-//           },
-//         ],
-//       };
-//     }
+Campos actualizables (todos opcionales, enviar solo los que se quieren modificar):
+- newName (string): nuevo nombre del producto
+- newPrice (number): nuevo precio del producto
+- newDescription (string): nueva descripción del producto
+- newSectionId o newSectionName: nueva sección destino
+- newSubSectionId o newSubSectionName: nueva subsección destino
 
-//     // Guardar origen para compactar luego si se mueve de subsección
-//     const prevSectionId = existing.sectionId;
-//     const prevSubSectionId = existing.subSectionId;
+Notas:
+- Si solo se modifican name, price o description, el orden y posición del producto no cambian.
+- Si se cambia la sección o subsección, el producto se inserta al final del orden en el destino.
+- Si la sección destino tiene subsecciones, se debe indicar también newSubSectionId o newSubSectionName.
+- El agente debe preguntar al usuario qué campos desea modificar antes de llamar a esta tool.
+  `.trim(),
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "number", description: "ID del producto a actualizar" },
+      name: {
+        type: "string",
+        description: "Nombre actual del producto para identificarlo",
+      },
+      newName: { type: "string", description: "Nuevo nombre del producto" },
+      newPrice: { type: "number", description: "Nuevo precio del producto" },
+      newDescription: {
+        type: "string",
+        description: "Nueva descripción del producto",
+      },
+      newSectionId: {
+        type: "number",
+        description: "ID de la nueva sección destino",
+      },
+      newSectionName: {
+        type: "string",
+        description: "Nombre de la nueva sección destino",
+      },
+      newSubSectionId: {
+        type: "number",
+        description: "ID de la nueva subsección destino",
+      },
+      newSubSectionName: {
+        type: "string",
+        description: "Nombre de la nueva subsección destino",
+      },
+    },
+    additionalProperties: false,
+  },
+  handler: async (args: UpdateProductArgs) => {
+    const {
+      id,
+      name,
+      newName,
+      newPrice,
+      newDescription,
+      newSectionId,
+      newSectionName,
+      newSubSectionId,
+      newSubSectionName,
+    } = args;
 
-//     // Resolver sección destino si se desea mover (por id o nombre). Si no se indica, usar la actual
-//     let targetSection = null as any;
-//     if (sectionId || sectionName) {
-//       if (sectionId) {
-//         targetSection = await prisma.section.findUnique({
-//           where: { id: sectionId },
-//           include: { subSections: true },
-//         });
-//       } else if (sectionName) {
-//         targetSection = await prisma.section.findFirst({
-//           where: { name: { equals: sectionName, mode: "insensitive" } },
-//           include: { subSections: true },
-//         });
-//       }
-//       if (!targetSection) {
-//         return {
-//           content: [
-//             {
-//               type: "text",
-//               text: JSON.stringify({
-//                 error: `Sección destino no encontrada: ${
-//                   sectionId ?? sectionName
-//                 }`,
-//               }),
-//             },
-//           ],
-//         };
-//       }
-//     } else {
-//       targetSection = await prisma.section.findUnique({
-//         where: { id: existing.sectionId },
-//         include: { subSections: true },
-//       });
-//     }
+    console.log(`[tool] updateProduct called`, args);
 
-//     const targetSectionIdFinal = targetSection.id as number;
+    if (!id && !name) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                error: "Debe enviar 'id' o 'name' para identificar el producto",
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
 
-//     // Si la sección destino tiene subsecciones y no se indicó subSection destino, preguntar
-//     if (
-//       targetSection.subSection === true &&
-//       !subSectionId &&
-//       !subSectionName &&
-//       // además, o bien estamos moviendo de sección o el producto actual no tiene subsección válida
-//       (sectionId || sectionName || !existing.subSectionId)
-//     ) {
-//       const subs = (targetSection.subSections || []).map((s: any) => ({
-//         id: s.id,
-//         name: s.name,
-//       }));
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify({
-//               error:
-//                 "La sección destino tiene subsecciones. Indique 'subSectionId' o 'subSectionName' para completar el movimiento.",
-//               subSections: subs,
-//               message:
-//                 "Seleccione una subsección y vuelva a llamar a updateProduct con subSectionId o subSectionName.",
-//             }),
-//           },
-//         ],
-//       };
-//     }
+    try {
+      const where: any = id ? { id } : { name };
 
-//     // Resolver subSection destino si viene por nombre
-//     let targetSubId: number | null | undefined =
-//       subSectionId ?? existing.subSectionId ?? null;
-//     if (subSectionName) {
-//       const sub = (targetSection.subSections || []).find(
-//         (s: any) => s.name.toLowerCase() === subSectionName.toLowerCase(),
-//       );
-//       if (!sub) {
-//         return {
-//           content: [
-//             {
-//               type: "text",
-//               text: JSON.stringify({
-//                 error: `Subsección destino no encontrada en la sección '${targetSection.name}': ${subSectionName}`,
-//                 subSections: (targetSection.subSections || []).map(
-//                   (s: any) => ({ id: s.id, name: s.name }),
-//                 ),
-//               }),
-//             },
-//           ],
-//         };
-//       }
-//       targetSubId = sub.id;
-//     }
+      const existing = await prisma.product.findUnique({
+        where,
+        include: { section: { include: { subSections: true } } },
+      });
 
-//     // Si se indicó subSectionOrder y la sección destino maneja subsecciones, reordenar en la subsección destino
-//     if (
-//       subSectionOrder !== undefined &&
-//       targetSection.subSection === true &&
-//       targetSubId
-//     ) {
-//       // Obtener productos de la subsección destino en orden
-//       const items = await prisma.product.findMany({
-//         where: { sectionId: targetSectionIdFinal, subSectionId: targetSubId },
-//         orderBy: { subSectionOrder: "asc" },
-//         select: { id: true, subSectionOrder: true },
-//       });
+      if (!existing) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { error: "Producto no encontrado" },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
 
-//       // Normalizar posición objetivo
-//       const maxPos = Math.max(items.length, 1);
-//       const targetPos = Math.max(1, Math.min(subSectionOrder, maxPos));
+      const wantsToChangeSection = newSectionId || newSectionName;
 
-//       // Identificar si el producto ya está en esta subsección
-//       const isSameSub =
-//         existing.sectionId === targetSectionIdFinal &&
-//         existing.subSectionId === targetSubId;
+      // -------------------------------------------------------
+      // CASO 1: Solo actualización de campos simples (sin cambio de sección)
+      // -------------------------------------------------------
+      if (!wantsToChangeSection) {
+        const updated = await prisma.product.update({
+          where: { id: existing.id },
+          data: {
+            ...(newName !== undefined && { name: newName }),
+            ...(newPrice !== undefined && { price: newPrice }),
+            ...(newDescription !== undefined && {
+              description: newDescription,
+            }),
+            updatedAt: new Date(),
+          },
+        });
 
-//       const currentOrder = isSameSub
-//         ? (existing.subSectionOrder ?? null)
-//         : null;
+        return {
+          content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
+        };
+      }
 
-//       if (isSameSub && currentOrder === targetPos) {
-//         // Nada que hacer, solo actualizar campos simples más abajo
-//       } else {
-//         // Ajustar órdenes de los demás elementos para dejar libre targetPos
-//         if (isSameSub && currentOrder) {
-//           if (currentOrder < targetPos) {
-//             // Mover hacia abajo: los que estaban entre (currentOrder, targetPos] suben una posición (-1)
-//             for (const it of items) {
-//               if (
-//                 it.id !== id &&
-//                 it.subSectionOrder &&
-//                 it.subSectionOrder > currentOrder &&
-//                 it.subSectionOrder <= targetPos
-//               ) {
-//                 await prisma.product.update({
-//                   where: { id: it.id },
-//                   data: { subSectionOrder: (it.subSectionOrder ?? 0) - 1 },
-//                 });
-//               }
-//             }
-//           } else {
-//             // Mover hacia arriba: los que estaban entre [targetPos, currentOrder) bajan una posición (+1)
-//             for (const it of items) {
-//               if (
-//                 it.id !== id &&
-//                 it.subSectionOrder &&
-//                 it.subSectionOrder >= targetPos &&
-//                 it.subSectionOrder < currentOrder
-//               ) {
-//                 await prisma.product.update({
-//                   where: { id: it.id },
-//                   data: { subSectionOrder: (it.subSectionOrder ?? 0) + 1 },
-//                 });
-//               }
-//             }
-//           }
-//         } else {
-//           // Viene de otra subsección u otra sección: desplazar hacia abajo a los elementos desde targetPos en adelante
-//           for (const it of items) {
-//             if (it.subSectionOrder && it.subSectionOrder >= targetPos) {
-//               await prisma.product.update({
-//                 where: { id: it.id },
-//                 data: { subSectionOrder: (it.subSectionOrder ?? 0) + 1 },
-//               });
-//             }
-//           }
-//         }
+      // -------------------------------------------------------
+      // CASO 2: Cambio de sección (y opcionalmente subsección)
+      // -------------------------------------------------------
+      let destSection: any = null;
 
-//         // Asegurar asignación a sección/subsección destino y setear el nuevo orden
-//         await prisma.product.update({
-//           where,
-//           data: {
-//             sectionId: targetSectionIdFinal,
-//             subSectionId: targetSubId,
-//             subSectionOrder: targetPos,
-//             order: 0,
-//           },
-//         });
-//         // Refrescar existing para que el resto de campos se apliquen sobre el estado nuevo
-//         Object.assign(existing, {
-//           sectionId: targetSectionIdFinal,
-//           subSectionId: targetSubId,
-//           subSectionOrder: targetPos,
-//         });
-//       }
-//     }
+      if (newSectionId) {
+        destSection = await prisma.section.findUnique({
+          where: { id: newSectionId },
+          include: { subSections: true },
+        });
+        if (!destSection) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  { error: `Sección no encontrada: id=${newSectionId}` },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+      } else if (newSectionName) {
+        destSection = await prisma.section.findFirst({
+          where: { name: { equals: newSectionName, mode: "insensitive" } },
+          include: { subSections: true },
+        });
+        if (!destSection) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  { error: `Sección no encontrada: ${newSectionName}` },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+      }
 
-//     // Preparar datos base (campos simples)
-//     const data: any = {
-//       // campos editables directos si se enviaron
-//       ...(name !== undefined ? { name } : {}),
-//       ...(description !== undefined ? { description } : {}),
-//       ...(active !== undefined ? { active } : {}),
-//       ...(price !== undefined ? { price } : {}),
-//     };
+      // Si la sección destino tiene subsecciones y no se indicó ninguna, devolver lista
+      if (
+        destSection.subSection === true &&
+        !newSubSectionId &&
+        !newSubSectionName
+      ) {
+        const subs = (destSection.subSections || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+        }));
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error:
+                  "La sección destino tiene subsecciones. Debe indicar 'newSubSectionId' o 'newSubSectionName'.",
+                subSections: subs,
+                message:
+                  "Seleccione una subsección y vuelva a llamar a updateProduct.",
+              }),
+            },
+          ],
+        };
+      }
 
-//     // Determinar si hay movimiento entre secciones/subsecciones
-//     const movingSection = targetSectionIdFinal !== existing.sectionId;
-//     const movingSub = (targetSubId ?? null) !== (existing.subSectionId ?? null);
+      // Resolver newSubSectionId si vino por nombre
+      let targetSubSectionId: number | undefined = newSubSectionId;
+      if (!targetSubSectionId && newSubSectionName) {
+        const sub = destSection.subSections.find(
+          (s: any) => s.name.toLowerCase() === newSubSectionName.toLowerCase(),
+        );
+        if (!sub) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: `Subsección no encontrada en la sección '${destSection.name}': ${newSubSectionName}`,
+                  subSections: (destSection.subSections || []).map(
+                    (s: any) => ({
+                      id: s.id,
+                      name: s.name,
+                    }),
+                  ),
+                }),
+              },
+            ],
+          };
+        }
+        targetSubSectionId = sub.id;
+      }
 
-//     if (
-//       movingSection ||
-//       movingSub ||
-//       sectionId ||
-//       sectionName ||
-//       subSectionId ||
-//       subSectionName
-//     ) {
-//       // Si ya reordenamos por subSectionOrder arriba, no recalcular el final
-//       if (
-//         targetSection.subSection === true &&
-//         targetSubId &&
-//         subSectionOrder !== undefined
-//       ) {
-//         data.sectionId = targetSectionIdFinal;
-//         data.subSectionId = targetSubId;
-//         data.order = 0;
-//         // mantener subSectionOrder tal como quedó
-//       } else if (targetSection.subSection === true && targetSubId) {
-//         // mover/colocar en subsección
-//         const lastInSub = await prisma.product.findFirst({
-//           where: { sectionId: targetSectionIdFinal, subSectionId: targetSubId },
-//           orderBy: { subSectionOrder: "desc" },
-//           select: { subSectionOrder: true },
-//         });
-//         const nextSubOrder = (lastInSub?.subSectionOrder ?? 0) + 1;
-//         data.sectionId = targetSectionIdFinal;
-//         data.subSectionId = targetSubId;
-//         data.subSectionOrder = nextSubOrder;
-//         data.order = 0; // no aplica en subsección
-//       } else {
-//         // mover/colocar en top-level de sección
-//         const lastInSection = await prisma.product.findFirst({
-//           where: { sectionId: targetSectionIdFinal, subSectionId: null },
-//           orderBy: { order: "desc" },
-//           select: { order: true },
-//         });
-//         const nextOrder = (lastInSection?.order ?? 0) + 1;
-//         data.sectionId = targetSectionIdFinal;
-//         data.subSectionId = null;
-//         data.subSectionOrder = 0;
-//         data.order = nextOrder;
-//       }
-//     } else {
-//       // No hay movimiento, pero si envió 'order', aplicarlo tal cual (reordenamiento manual)
-//       if (order !== undefined) data.order = order;
-//       if (subSectionId !== undefined) data.subSectionId = subSectionId;
-//     }
+      const updated = await prisma.$transaction(async (tx) => {
+        // 1) Shift en sección/subsección origen: decrementar los que quedan atrás
+        if (existing.subSectionId) {
+          const toShift = await tx.product.findMany({
+            where: {
+              sectionId: existing.sectionId,
+              subSectionId: existing.subSectionId,
+              subSectionOrder: { gt: existing.subSectionOrder ?? 0 },
+            },
+            orderBy: { subSectionOrder: "asc" },
+          });
+          for (const p of toShift) {
+            await tx.product.update({
+              where: { id: p.id },
+              data: { subSectionOrder: p.subSectionOrder - 1 },
+            });
+          }
+        } else {
+          const toShift = await tx.product.findMany({
+            where: {
+              sectionId: existing.sectionId,
+              subSectionId: null,
+              order: { gt: existing.order ?? 0 },
+            },
+            orderBy: { order: "asc" },
+          });
+          for (const p of toShift) {
+            await tx.product.update({
+              where: { id: p.id },
+              data: { order: p.order - 1 },
+            });
+          }
+        }
 
-//     const updated = await prisma.product.update({ where, data });
+        // 2) Calcular posición al final en el destino
+        let destOrder = 0;
+        let destSubSectionOrder = 0;
 
-//     // Si el producto se movió fuera de su subsección de origen, compactar la subsección anterior
-//     const movedOutOfPrevSub =
-//       (prevSubSectionId ?? null) !== (targetSubId ?? null) ||
-//       prevSectionId !== targetSectionIdFinal;
-//     if (prevSubSectionId && movedOutOfPrevSub) {
-//       const remaining = await prisma.product.findMany({
-//         where: { sectionId: prevSectionId, subSectionId: prevSubSectionId },
-//         orderBy: { subSectionOrder: "asc" },
-//         select: { id: true },
-//       });
-//       let pos = 1;
-//       for (const it of remaining) {
-//         await prisma.product.update({
-//           where: { id: it.id },
-//           data: { subSectionOrder: pos++ },
-//         });
-//       }
-//     }
+        if (destSection.subSection === true && targetSubSectionId) {
+          const last = await tx.product.findFirst({
+            where: {
+              sectionId: destSection.id,
+              subSectionId: targetSubSectionId,
+            },
+            orderBy: { subSectionOrder: "desc" },
+            select: { subSectionOrder: true },
+          });
+          destSubSectionOrder = (last?.subSectionOrder ?? 0) + 1;
+        } else {
+          const last = await tx.product.findFirst({
+            where: { sectionId: destSection.id, subSectionId: null },
+            orderBy: { order: "desc" },
+            select: { order: true },
+          });
+          destOrder = (last?.order ?? 0) + 1;
+        }
 
-//     return {
-//       content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
-//     };
-//   },
-// );
+        // 3) Actualizar el producto con nueva posición y campos modificados
+        return tx.product.update({
+          where: { id: existing.id },
+          data: {
+            ...(newName !== undefined && { name: newName }),
+            ...(newPrice !== undefined && { price: newPrice }),
+            ...(newDescription !== undefined && {
+              description: newDescription,
+            }),
+            sectionId: destSection.id,
+            subSectionId: targetSubSectionId ?? null,
+            order: destOrder,
+            subSectionOrder: destSubSectionOrder,
+            updatedAt: new Date(),
+          },
+        });
+      });
 
-// // Tool: productos por nombre de sección (case-insensitive)
-// const getProductsBySectionNameSchema = {
-//   sectionName: z.string().min(1),
-//   subSectionName: z.string().min(1).optional(),
-//   active: z.boolean().optional(),
-// } as const;
-
-// server.registerTool(
-//   "getProductsBySectionName",
-//   {
-//     description:
-//       "Devuelve los productos de una sección por nombre (case-insensitive). Si la sección tiene subsecciones, agrupa por subsección y respeta el orden; también permite filtrar por una 'subSectionName' específica. Agrega 'formattedPrice' (es-AR).",
-//     inputSchema: getProductsBySectionNameSchema,
-//   },
-//   async ({ sectionName, subSectionName, active }, _extra) => {
-//     console.log(
-//       `[tool] getProductsBySectionName called { sectionName: ${sectionName}, subSectionName: ${
-//         subSectionName ?? "-"
-//       }, active: ${active ?? "-"} }`,
-//     );
-
-//     // 1) Resolver sección por nombre (case-insensitive)
-//     const section = await prisma.section.findFirst({
-//       where: { name: { equals: sectionName, mode: "insensitive" } },
-//       include: { subSections: true },
-//     });
-
-//     if (!section) {
-//       const available = await prisma.section.findMany({
-//         select: { id: true, name: true, subSection: true, order: true },
-//         orderBy: { order: "asc" },
-//       });
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify(
-//               {
-//                 error: `Sección no encontrada: ${sectionName}`,
-//                 sections: available,
-//               },
-//               null,
-//               2,
-//             ),
-//           },
-//         ],
-//       };
-//     }
-
-//     // Formateador de precio (es-AR)
-//     const nf = new Intl.NumberFormat("es-AR", {
-//       style: "currency",
-//       currency: "ARS",
-//       minimumFractionDigits: 2,
-//       maximumFractionDigits: 2,
-//     });
-
-//     // 2) Si NO tiene subsecciones
-//     if (section.subSection !== true) {
-//       if (subSectionName) {
-//         return {
-//           content: [
-//             {
-//               type: "text",
-//               text: JSON.stringify(
-//                 {
-//                   error: `La sección '${section.name}' no tiene subsecciones. No puede usar 'subSectionName'.`,
-//                   section: {
-//                     id: section.id,
-//                     name: section.name,
-//                     subSection: false,
-//                   },
-//                 },
-//                 null,
-//                 2,
-//               ),
-//             },
-//           ],
-//         };
-//       }
-//       const where: any = { sectionId: section.id, subSectionId: null };
-//       if (active !== undefined) where.active = active;
-
-//       const products = await prisma.product.findMany({
-//         where,
-//         orderBy: [{ order: "asc" }],
-//       });
-
-//       const formatted = products.map((p: any) => ({
-//         ...p,
-//         formattedPrice: nf.format(Number(p.price)),
-//       }));
-
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify(
-//               {
-//                 section: {
-//                   id: section.id,
-//                   name: section.name,
-//                   subSection: false,
-//                 },
-//                 products: formatted,
-//               },
-//               null,
-//               2,
-//             ),
-//           },
-//         ],
-//       };
-//     }
-
-//     // 3) Tiene subsecciones: si viene subSectionName -> solo esa; si no, agrupar todas
-//     // Ordenar subsecciones por su campo 'order'
-//     const subSections = [...(section.subSections || [])].sort(
-//       (a: any, b: any) => (a.order ?? 0) - (b.order ?? 0),
-//     );
-
-//     const result: any = {
-//       section: { id: section.id, name: section.name, subSection: true },
-//       subSections: [] as any[],
-//     };
-
-//     // Si se especificó una subsección por nombre, devolver solo esa
-//     if (subSectionName) {
-//       const sub = subSections.find(
-//         (s: any) => s.name.toLowerCase() === subSectionName.toLowerCase(),
-//       );
-//       if (!sub) {
-//         return {
-//           content: [
-//             {
-//               type: "text",
-//               text: JSON.stringify(
-//                 {
-//                   error: `Subsección no encontrada en la sección '${section.name}': ${subSectionName}`,
-//                   subSections: subSections.map((s: any) => ({
-//                     id: s.id,
-//                     name: s.name,
-//                     order: s.order,
-//                   })),
-//                 },
-//                 null,
-//                 2,
-//               ),
-//             },
-//           ],
-//         };
-//       }
-
-//       const where: any = { sectionId: section.id, subSectionId: sub.id };
-//       if (active !== undefined) where.active = active;
-
-//       const items = await prisma.product.findMany({
-//         where,
-//         orderBy: [{ subSectionOrder: "asc" }],
-//       });
-
-//       const formatted = items.map((p: any) => ({
-//         ...p,
-//         formattedPrice: nf.format(Number(p.price)),
-//       }));
-
-//       result.subSections.push({
-//         id: sub.id,
-//         name: sub.name,
-//         order: sub.order,
-//         products: formatted,
-//       });
-
-//       return {
-//         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-//       };
-//     }
-
-//     // Si no se solicitó una subsección específica, listar todas
-//     for (const sub of subSections) {
-//       const where: any = { sectionId: section.id, subSectionId: sub.id };
-//       if (active !== undefined) where.active = active;
-
-//       const items = await prisma.product.findMany({
-//         where,
-//         orderBy: [{ subSectionOrder: "asc" }],
-//       });
-
-//       const formatted = items.map((p: any) => ({
-//         ...p,
-//         formattedPrice: nf.format(Number(p.price)),
-//       }));
-
-//       result.subSections.push({
-//         id: sub.id,
-//         name: sub.name,
-//         order: sub.order,
-//         products: formatted,
-//       });
-//     }
-
-//     return {
-//       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-//     };
-//   },
-// );
+      return {
+        content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
+      };
+    } catch (error) {
+      console.error("[tool] updateProduct error:", error);
+      throw error;
+    }
+  },
+};
 
 /** 2) START: STDI Opción (local) **/
 export async function startStdio() {
