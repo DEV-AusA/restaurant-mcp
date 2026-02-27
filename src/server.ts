@@ -159,195 +159,6 @@ tools["getProducts"] = {
   },
 };
 
-// tools["createProduct"] = {
-//   description: `
-// Crea un nuevo producto en el restaurante.
-
-// Requiere obligatoriamente:
-// - name (string)
-// - price (number o string convertible a número)
-// - sectionId o sectionName
-
-// Opcional:
-// - subSectionId o subSectionName
-
-// Notas:
-// - Si la sección tiene subsecciones, debe enviarse una subsección válida.
-// - El producto se inserta al final del orden correspondiente (order o subSectionOrder).
-// `.trim(),
-
-//   inputSchema: {
-//     type: "object",
-//     required: ["name", "price"],
-//     additionalProperties: false,
-//     properties: {
-//       name: {
-//         type: "string",
-//         minLength: 1,
-//         description: "Nombre del producto",
-//       },
-//       price: {
-//         type: ["number", "string"],
-//         description:
-//           "Precio del producto. Puede enviarse como número o string convertible.",
-//       },
-//       sectionId: {
-//         type: "number",
-//         description: "ID de la sección destino",
-//       },
-//       sectionName: {
-//         type: "string",
-//         description: "Nombre de la sección (case-insensitive)",
-//       },
-//       subSectionId: {
-//         type: "number",
-//         description: "ID de la subsección",
-//       },
-//       subSectionName: {
-//         type: "string",
-//         description: "Nombre de la subsección (case-insensitive)",
-//       },
-//     },
-//   },
-
-//   handler: async (args: CreateProductArgs) => {
-//     console.log("ARGS RECEIVED (createProduct):", args);
-
-//     try {
-//       //validacion obligatoria name
-//       if (!args.name || typeof args.name !== "string") {
-//         throw new Error("Parameter 'name' is required and must be a string.");
-//       }
-
-//       //validacion obligatoria price
-//       if (args.price === undefined) {
-//         throw new Error("Parameter 'price' is required.");
-//       }
-
-//       let parsedPrice: number;
-
-//       if (typeof args.price === "string") {
-//         const cleaned = args.price.replace(/[^\d.-]/g, "");
-//         parsedPrice = Number(cleaned);
-//       } else {
-//         parsedPrice = args.price;
-//       }
-
-//       if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
-//         throw new Error("Parameter 'price' must be a positive number.");
-//       }
-
-//       //validación seccion
-//       if (!args.sectionId && !args.sectionName) {
-//         throw new Error(
-//           "Either 'sectionId' or 'sectionName' must be provided.",
-//         );
-//       }
-
-//       let section: Prisma.SectionGetPayload<{
-//         include: { subSections: true };
-//       }> | null = null;
-
-//       if (typeof args.sectionId === "number") {
-//         section = await prisma.section.findUnique({
-//           where: { id: args.sectionId },
-//           include: { subSections: true },
-//         });
-//       } else if (typeof args.sectionName === "string") {
-//         section = await prisma.section.findFirst({
-//           where: {
-//             name: {
-//               equals: args.sectionName,
-//               mode: "insensitive",
-//             },
-//           },
-//           include: { subSections: true },
-//         });
-//       }
-
-//       if (!section) {
-//         throw new Error("Section not found.");
-//       }
-
-//       const targetSectionId = section.id;
-
-//       //validacion subseccion si aplica
-//       let targetSubSectionId: number | undefined = args.subSectionId;
-
-//       if (section.subSection === true) {
-//         if (!args.subSectionId && !args.subSectionName) {
-//           throw new Error(
-//             "This section requires a subSectionId or subSectionName.",
-//           );
-//         }
-
-//         if (!targetSubSectionId && args.subSectionName) {
-//           const sub = section.subSections.find(
-//             (s) => s.name.toLowerCase() === args.subSectionName!.toLowerCase(),
-//           );
-
-//           if (!sub) {
-//             throw new Error("Subsection not found.");
-//           }
-
-//           targetSubSectionId = sub.id;
-//         }
-//       }
-
-//       const data: Prisma.ProductCreateInput = {
-//         name: args.name,
-//         price: parsedPrice,
-//         section: {
-//           connect: { id: targetSectionId },
-//         },
-//       };
-
-//       // 🔹 Ordenamiento dinámico
-//       if (section.subSection === true && targetSubSectionId) {
-//         const last = await prisma.product.findFirst({
-//           where: {
-//             sectionId: targetSectionId,
-//             subSectionId: targetSubSectionId,
-//           },
-//           orderBy: { subSectionOrder: "desc" },
-//           select: { subSectionOrder: true },
-//         });
-
-//         data.subSection = {
-//           connect: { id: targetSubSectionId },
-//         };
-
-//         data.subSectionOrder = (last?.subSectionOrder ?? 0) + 1;
-//       } else {
-//         const last = await prisma.product.findFirst({
-//           where: {
-//             sectionId: targetSectionId,
-//             subSectionId: null,
-//           },
-//           orderBy: { order: "desc" },
-//           select: { order: true },
-//         });
-
-//         data.order = (last?.order ?? 0) + 1;
-//       }
-
-//       const product = await prisma.product.create({ data });
-
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify(product, null, 2),
-//           },
-//         ],
-//       };
-//     } catch (error) {
-//       console.error("Error in createProduct:", error);
-//       throw error;
-//     }
-//   },
-// };
-
 tools["createProduct"] = {
   description: `
   Crea un nuevo producto en el restaurante.
@@ -526,6 +337,135 @@ tools["createProduct"] = {
       };
     } catch (error) {
       console.error("[tool] createProduct error:", error);
+      throw error;
+    }
+  },
+};
+
+type DeleteProductArgs = {
+  id?: number;
+  name?: string;
+};
+
+tools["deleteProduct"] = {
+  description: `
+Elimina un producto del restaurante y ajusta los índices de orden de los productos afectados.
+
+Requiere al menos uno de:
+- id (number): id del producto a eliminar
+- name (string): nombre exacto del producto a eliminar
+
+Notas:
+- Si se envía 'name', se asume que es único en el sistema.
+- Tras eliminar, decrementa en 1 solo los productos con orden mayor al eliminado, en su sección o subsección correspondiente.
+- La eliminación y el ajuste de orden se realizan en una transacción atómica.
+- Retorna el id eliminado.
+  `.trim(),
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "number", description: "ID del producto a eliminar" },
+      name: {
+        type: "string",
+        description: "Nombre exacto del producto a eliminar",
+      },
+    },
+    additionalProperties: false,
+  },
+  handler: async (args: DeleteProductArgs) => {
+    const { id, name } = args;
+
+    console.log(
+      `[tool] deleteProduct called { id: ${id ?? "-"}, name: ${name ?? "-"} }`,
+    );
+
+    if (!id && !name) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              { error: "Debe enviar 'id' o 'name'" },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    try {
+      const where: any = id ? { id } : { name };
+
+      const existing = await prisma.product.findUnique({
+        where,
+      });
+
+      if (!existing) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                { error: "Producto no encontrado" },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.product.delete({ where: { id: existing.id } });
+
+        if (existing.subSectionId) {
+          // Producto en subsección: shift de subSectionOrder
+          const toShift = await tx.product.findMany({
+            where: {
+              sectionId: existing.sectionId,
+              subSectionId: existing.subSectionId,
+              subSectionOrder: { gt: existing.subSectionOrder ?? 0 },
+            },
+            orderBy: { subSectionOrder: "asc" },
+          });
+          for (const p of toShift) {
+            await tx.product.update({
+              where: { id: p.id },
+              data: { subSectionOrder: p.subSectionOrder - 1 },
+            });
+          }
+        } else {
+          // Producto top-level: shift de order
+          const toShift = await tx.product.findMany({
+            where: {
+              sectionId: existing.sectionId,
+              subSectionId: null,
+              order: { gt: existing.order ?? 0 },
+            },
+            orderBy: { order: "asc" },
+          });
+          for (const p of toShift) {
+            await tx.product.update({
+              where: { id: p.id },
+              data: { order: p.order - 1 },
+            });
+          }
+        }
+      });
+
+      console.log(`[tool] deleteProduct -> deletedId: ${existing.id}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ deletedId: existing.id }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("[tool] deleteProduct error:", error);
       throw error;
     }
   },
@@ -959,116 +899,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 //     return {
 //       content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
-//     };
-//   },
-// );
-
-// // Tool: eliminar producto con recompacción de órdenes
-// const deleteProductSchema = {
-//   id: z.number().int().min(1).optional(),
-//   name: z.string().min(1).optional(),
-// } as const;
-
-// server.registerTool(
-//   "deleteProduct",
-//   {
-//     description:
-//       "Elimina un producto por id o nombre y reordena compactando los índices en su sección o subsección según corresponda.",
-//     inputSchema: deleteProductSchema,
-//   },
-//   async ({ id, name }, _extra) => {
-//     console.log(
-//       `[tool] deleteProduct called { id: ${id ?? "-"}, name: ${name ?? "-"} }`,
-//     );
-
-//     if (!id && !name) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify(
-//               { error: "Debe enviar 'id' o 'name'" },
-//               null,
-//               2,
-//             ),
-//           },
-//         ],
-//       };
-//     }
-
-//     // Nota: esto asume 'name' único, igual que updateProduct
-//     const where: any = id ? { id } : { name };
-//     const existing = await prisma.product.findUnique({
-//       where,
-//       select: {
-//         id: true,
-//         sectionId: true,
-//         subSectionId: true,
-//       },
-//     });
-
-//     if (!existing) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify({ error: "Producto no encontrado" }, null, 2),
-//           },
-//         ],
-//       };
-//     }
-
-//     // Hacer todo dentro de una transacción para no dejar órdenes inconsistentes
-//     const result = await prisma.$transaction(async (tx) => {
-//       // 1) Eliminar
-//       const deleted = await tx.product.delete({ where: { id: existing.id } });
-
-//       // 2) Recompactar según contenedor
-//       let compacted = 0;
-//       if (existing.subSectionId) {
-//         // Dentro de una subsección: reordenar subSectionOrder desde 1
-//         const items = await tx.product.findMany({
-//           where: {
-//             sectionId: existing.sectionId,
-//             subSectionId: existing.subSectionId,
-//           },
-//           orderBy: { subSectionOrder: "asc" },
-//           select: { id: true },
-//         });
-//         let pos = 1;
-//         for (const it of items) {
-//           await tx.product.update({
-//             where: { id: it.id },
-//             data: { subSectionOrder: pos++ },
-//           });
-//           compacted++;
-//         }
-//       } else {
-//         // Top-level de sección: reordenar order desde 1 (manteniendo subSectionId en null)
-//         const items = await tx.product.findMany({
-//           where: { sectionId: existing.sectionId, subSectionId: null },
-//           orderBy: { order: "asc" },
-//           select: { id: true },
-//         });
-//         let pos = 1;
-//         for (const it of items) {
-//           await tx.product.update({
-//             where: { id: it.id },
-//             data: { order: pos++, subSectionOrder: 0 },
-//           });
-//           compacted++;
-//         }
-//       }
-
-//       return { deletedId: deleted.id, compacted };
-//     });
-
-//     console.log(
-//       `[tool] deleteProduct -> deletedId: ${result.deletedId}, compacted: ${result.compacted}`,
-//     );
-
-//     return {
-//       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
 //     };
 //   },
 // );
